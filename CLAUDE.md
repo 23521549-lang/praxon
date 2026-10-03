@@ -25,7 +25,7 @@ Tài liệu này giữ phần *ràng buộc*. Phần *biểu mẫu* — mẫu sp
 | 5 | **Không làm thoái cấp dự án, không để nợ kỹ thuật, tuân thủ clean code.** | *Thoái cấp* = thay đổi làm mất một tính chất đã đạt: một test, một cổng CI, một bất biến, một chỉ số. *Nợ kỹ thuật* = thay đổi mà đã biết trước là phải viết lại. Hai đường duy nhất: làm đúng ngay, hoặc ghi vào danh sách để sau kèm cổng nếu nó không ràng buộc gì về sau. *Clean code* ở kho này là phần kiểm được bằng máy — xem mục *Cổng máy*. | "Tạm tắt test cho qua", "để sau sẽ dọn", hard-code một con số chính sách vào mã, bỏ qua lint một lần |
 | 6 | **Tự review trước khi đề xuất.** | Trước khi gửi, tự đọc lại đề xuất theo đúng cổng của bước đó, tự tìm chỗ sai, sửa. Phần nào chưa chạy được phép thử thì nói thẳng là chưa có bằng chứng, không để chủ dự án tự phát hiện. | Đề xuất bị bắt lỗi ngay ở câu hỏi đầu tiên của cổng tương ứng |
 | 7 | **Đề xuất phải có bằng chứng.** Có phép thử chạy thật hoặc nguồn đã kiểm, không chỉ trích dẫn. | Ba mức bằng chứng, chỉ hai mức đầu được dùng để quyết — xem mục *Bằng chứng*. Mỗi khẳng định gắn đúng mức của nó. | Con số nhớ lại; link dán vào mà chưa mở; "theo kinh nghiệm thì" |
-| 8 | **Chủ dự án duyệt trước khi áp dụng.** Đề xuất kèm checklist, duyệt xong mới áp vào spec. | Không tự sửa `docs/product`, `docs/roadmap`, `docs/specs` hay `CLAUDE.md`. Đề xuất đi kèm checklist bắt buộc sáu dòng — xem mục *Đề xuất và duyệt*. | Spec bị sửa trong cùng lượt với lúc đề xuất nó |
+| 8 | **Chủ dự án duyệt trước khi áp dụng.** Đề xuất kèm checklist, duyệt xong mới áp vào spec. | Không tự thay đổi bất cứ thứ gì trong kho — tài liệu, mã, cấu hình, cấu trúc thư mục — khi chưa được chủ dự án duyệt. Đề xuất trình bằng tin nhắn kèm checklist sáu dòng — xem mục *Đề xuất và duyệt*; duyệt rồi mới ghi tệp. Và duyệt rồi mới `git commit` hay `git push`: không bao giờ commit trong cùng lượt với lúc đề xuất. | Ghi tệp rồi mới hỏi; commit và push trong cùng lượt với lúc đề xuất; tự quyết sửa lịch sử git |
 | 9 | **Chỉ sang plan khi spec sạch rủi ro.** Spec không còn rủi ro nghiêm trọng; rủi ro còn lại đều ở mức nhẹ và chấp nhận được. | Chạy cổng spec của giai đoạn đó. Không còn rủi ro mức trung bình hoặc nặng, và mỗi rủi ro còn lại có đủ ba thứ: mức, dấu hiệu theo dõi, hạn kiểm. | Chia plan khi còn một rủi ro trung bình "sẽ xử lý trong lúc code" |
 
 ## Quy trình: spec → plan → code
@@ -140,6 +140,7 @@ Cắt một việc nghĩa là chuyển nó sang danh sách để sau có ghi lý
 
 ## Quy tắc commit
 
+- **Commit và push xin phép từng lần.** Không `git commit`, không `git push`, không sửa lịch sử (`amend`, `rebase`, `force-push`) khi chủ dự án chưa đồng ý cho đúng lần đó. Duyệt nội dung không tự động là duyệt commit — hai việc hỏi riêng.
 - **Một dòng, một `-m`.** Mỗi commit có đúng một dòng thông điệp, viết bằng một `-m`. Không `-F`, không heredoc, không thân commit nhiều đoạn.
 - **Không ghi chính mình vào commit.** Không `Co-Authored-By`, không dòng phiên làm việc, không tên hay định danh mô hình ở bất cứ đâu trong thông điệp. Lịch sử kho ghi *việc gì đã thay đổi*, không ghi *ai hay cái gì đã đánh máy*.
 - **Áp cho mọi commit trong kho này**, kể cả commit trên nhánh làm việc rồi gộp vào `main`: gộp chính là lúc dòng attribution lọt vào `main`.
@@ -154,5 +155,5 @@ Cắt một việc nghĩa là chuyển nó sang danh sách để sau có ghi lý
 | `docs/product/` | Định vị, mô hình gói, quyết định sản phẩm | Chỉ sau khi chủ dự án duyệt |
 | `docs/roadmap/` | Giai đoạn, cổng, thứ tự cắt | Chỉ sau khi chủ dự án duyệt |
 | `docs/specs/<giai-đoạn>/` | Spec kỹ thuật và cổng spec của giai đoạn | Chỉ sau khi chủ dự án duyệt |
-| `docs/plans/<giai-đoạn>/` | Plan con, task, bản ghi review, báo cáo cổng | Cập nhật trong lúc làm; cấu trúc thì cần duyệt |
+| `docs/plans/<giai-đoạn>/` | Plan con, task, bản ghi review, báo cáo cổng | Chỉ sau khi chủ dự án duyệt |
 | `docs/decisions/` | Bản quyết định kiến trúc, mỗi quyết định một tệp, chỉ thêm | Thêm mới được; sửa quyết định cũ thì ghi quyết định mới thay thế |
