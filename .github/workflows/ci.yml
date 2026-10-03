@@ -1,0 +1,68 @@
+# Mọi cổng máy của dự án, chạy trên mỗi push và mỗi pull request.
+#
+# Hai quy ước quan trọng:
+#
+# 1. Gọi mọi công cụ bằng `python -m <tên>`, không bằng binary trên PATH. Phép
+#    thử ngày 3/10/2026: `mypy` trên PATH báo 1.20.2 còn `python3 -m mypy` báo
+#    2.4.0; `ruff` trên PATH báo 0.15.20 còn module báo 0.16.10. Ghim phiên bản
+#    mà gọi sai binary thì ghim vô nghĩa. Cổng `check_tool_versions` canh việc
+#    môi trường đúng là môi trường đã ghim.
+#
+# 2. Mỗi bước là một cổng riêng, không gộp bằng `&&`. Gộp thì bước đầu đỏ sẽ
+#    che mọi bước sau, và một lần chạy CI chỉ cho biết một lỗi.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  cong-may:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cài bộ công cụ đã ghim
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      - name: Cài hai gói ở chế độ editable
+        run: python -m pip install -e packages/core -e packages/platform
+
+      - name: Cổng — phiên bản công cụ khớp bản ghim
+        run: python -m tools.check_tool_versions
+
+      - name: Cổng — ruff check
+        run: python -m ruff check .
+
+      - name: Cổng — ruff format
+        run: python -m ruff format --check .
+
+      - name: Cổng — mypy strict
+        run: python -m mypy
+
+      - name: Cổng — ranh giới import
+        run: python -m importlinter.cli --config .importlinter
+
+      - name: Cổng — biến môi trường chỉ ở settings
+        run: python -m tools.check_env_access
+
+      - name: Cổng — không có dữ liệu bên thứ ba trong kho
+        run: python -m tools.check_thirdparty_data
+
+      - name: Cổng — không trùng tên module thư viện chuẩn
+        run: python -m tools.check_no_stdlib_shadowing
+
+      - name: Cổng — giấy phép phụ thuộc của core
+        run: python -m tools.check_licenses
+
+      - name: Cổng — phép thử ranh giới, core cài và chạy một mình
+        run: python -m tools.check_core_standalone
+
+      - name: Test và độ phủ
+        run: python -m pytest
