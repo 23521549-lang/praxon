@@ -1,0 +1,101 @@
+[importlinter]
+root_packages =
+    praxon_core
+    praxon_platform
+include_external_packages = True
+
+# Bốn hợp đồng dưới đây là bản cài đặt bằng máy của bốn bất biến ranh giới
+# trong CLAUDE.md.
+#
+# Ba hợp đồng "chỉ ở một chỗ" dùng `forbidden` kèm một allowlist trong
+# `ignore_imports`. Đã thử loại hợp đồng `protected` — nó khai đúng ý hơn:
+# "tập module này chỉ được import bởi tập module kia" — nhưng phép thử ngày
+# 3/10/2026 cho thấy nó đòi module được bảo vệ phải CÓ MẶT trong đồ thị
+# import, và báo lỗi `"openai" not present in the graph` khi chưa ai import nó.
+# Các thư viện ngoài chưa được cài vì chưa dùng tới, nên `protected` chưa dùng
+# được. Allowlist dùng mẫu `.**` nên nó tự phủ mọi module con thêm sau, không
+# phải sửa mỗi lần.
+#
+# `unmatched_ignore_imports_alerting = warn` đặt ở từng hợp đồng, không phải ở
+# mục chung — đó là trường của hợp đồng. Lúc này adapters, repositories và
+# gateway còn rỗng nên chưa dòng ignore nào khớp. Một ignore chưa khớp làm hợp
+# đồng CHẶT hơn, không lỏng hơn: nếu viết sai mẫu thì chính import hợp lệ sẽ
+# bị chặn và CI đỏ ngay, chứ không có đường nào để một import bị cấm lọt qua.
+
+[importlinter:contract:core-khong-import-platform]
+name = core không bao giờ import platform
+type = forbidden
+source_modules =
+    praxon_core
+forbidden_modules =
+    praxon_platform
+broken_contract_guidance =
+    Chiều phụ thuộc chỉ đi một hướng: platform import core, core không bao giờ
+    import platform. Nếu core cần một thứ đang nằm ở platform thì thứ đó thuộc
+    về core — chuyển nó sang, đừng mở chiều ngược lại.
+
+[importlinter:contract:sdk-mo-hinh-chi-trong-adapters]
+name = SDK mô hình chỉ trong adapters
+type = forbidden
+source_modules =
+    praxon_core
+forbidden_modules =
+    openai
+    anthropic
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    praxon_core.adapters -> openai
+    praxon_core.adapters.** -> openai
+    praxon_core.adapters -> anthropic
+    praxon_core.adapters.** -> anthropic
+broken_contract_guidance =
+    Mọi lệnh gọi mô hình đi qua giao diện LanguageModel trong
+    praxon_core.adapters. Đổi nhà cung cấp phải chỉ sửa một thư mục.
+
+[importlinter:contract:driver-db-chi-trong-repositories]
+name = driver cơ sở dữ liệu chỉ trong repositories
+type = forbidden
+source_modules =
+    praxon_core
+forbidden_modules =
+    psycopg
+    psycopg2
+    asyncpg
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    praxon_core.repositories -> psycopg
+    praxon_core.repositories.** -> psycopg
+    praxon_core.repositories -> psycopg2
+    praxon_core.repositories.** -> psycopg2
+    praxon_core.repositories -> asyncpg
+    praxon_core.repositories.** -> asyncpg
+broken_contract_guidance =
+    Mọi truy cập dữ liệu đi qua praxon_core.repositories, để các bất biến của
+    lược đồ nằm ở một chỗ kiểm được.
+
+[importlinter:contract:client-tool-chi-trong-gateway-va-adapters]
+name = client MCP và SDK agent chỉ trong gateway và adapters
+type = forbidden
+source_modules =
+    praxon_core
+forbidden_modules =
+    mcp
+    agents
+    claude_agent_sdk
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    praxon_core.gateway -> mcp
+    praxon_core.gateway.** -> mcp
+    praxon_core.gateway -> agents
+    praxon_core.gateway.** -> agents
+    praxon_core.gateway -> claude_agent_sdk
+    praxon_core.gateway.** -> claude_agent_sdk
+    praxon_core.adapters -> mcp
+    praxon_core.adapters.** -> mcp
+    praxon_core.adapters -> agents
+    praxon_core.adapters.** -> agents
+    praxon_core.adapters -> claude_agent_sdk
+    praxon_core.adapters.** -> claude_agent_sdk
+broken_contract_guidance =
+    Mọi tool call đi qua ToolGateway. Một đường gọi tool vòng qua cổng là mất
+    cả khả năng chặn lẫn log cho vòng học.
