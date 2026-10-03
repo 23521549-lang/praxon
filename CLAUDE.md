@@ -101,6 +101,8 @@ Spec đã chốt nguyên tắc "quy ước nào không kiểm được bằng m�
 | Bước CI chặn dữ liệu | Không có `.xes`, `.csv`, `.gz` trong kho ngoài fixture của test |
 | Test hiệu năng khám phá | Log giả cỡ đô thị 1, không lọc trước, dưới 30 giây trên CPU |
 
+**Cổng do dự án tự viết phải có test âm.** Bốn hợp đồng import-linter, bước pip-licenses, script tìm biến môi trường và script chặn dữ liệu: mỗi cái có một test cố tình tạo vi phạm rồi khẳng định cổng trả mã khác 0. Cổng dùng công cụ sẵn — mypy strict, ruff, ruff format, độ phủ — không cần, vì chúng không có cấu hình do dự án viết mà có thể âm thầm không khớp gì. Một cổng chưa bao giờ thấy đỏ thì chưa biết nó có chặn. Lý do, phương án bị loại và tiền lệ ở `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md`.
+
 ## Bất biến không bao giờ phá
 
 Lấy từ ba tài liệu, gom về một chỗ. Phá một trong các dòng này là thoái cấp theo quy tắc 5, không phải đánh đổi.

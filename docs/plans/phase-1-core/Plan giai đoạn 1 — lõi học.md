@@ -1,6 +1,8 @@
 # Plan giai đoạn 1 — lõi học
 
-Oct 3, 2026 · @ngoc thuan · **trạng thái: bản nháp, chờ chủ dự án duyệt**
+Oct 3, 2026 · @ngoc thuan · **trạng thái: nội dung đã duyệt 3/10/2026; chưa sạch để sang code vì R18 còn ở mức trung bình**
+
+Hai quyết định ràng buộc của plan này nằm ở `docs/decisions/0001-cach-chia-plan-giai-doan-1.md` (cách chia) và `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md` (phạm vi test âm).
 
 Chia từ `docs/specs/phase-1-core/Spec kỹ thuật — gói core.md` (qua cổng spec lần 5, ngày 3/10/2026) và khẩu phần tám tuần trong `docs/roadmap/Lộ trình — Enterprise Agentic.md`. Chưa duyệt thì chưa được code: quy tắc 1.
 
@@ -45,7 +47,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 ## Plan con 1 — Nền móng kho và cổng máy
 
 **Tuần:** 1 · **Mục tiêu:** mọi cổng máy trong `CLAUDE.md` chạy và chặn được merge, *trước* khi có dòng mã nghiệp vụ nào.
-**Cổng ra:** CI xanh, và mỗi cổng có một test âm — một vi phạm cố ý làm cổng đó trả mã khác 0 — chứng minh cổng không phải trang trí.
+**Cổng ra:** CI xanh, và **bốn cổng do dự án tự viết** có test âm — một vi phạm cố ý làm cổng đó trả mã khác 0 — chứng minh cổng không phải trang trí: hợp đồng import-linter (task 1.2), pip-licenses (1.4), script tìm biến môi trường (1.6), script chặn dữ liệu (1.7). mypy strict, ruff và cổng độ phủ không cần test âm; lý do và tiền lệ ở `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md`.
 **Bất biến chạm tới:** `core` không import `platform`; một mã nguồn không hai nhánh; hạn mức là dữ liệu không hard-code.
 **Phụ thuộc:** không.
 **Thứ tự cắt:** không cắt gì. Spec nói độ phủ áp *từ commit đầu tiên*, nên plan con này đi trước mọi plan con khác.
@@ -301,6 +303,16 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 ---
 
+## Rủi ro của plan
+
+| # | Rủi ro | Cách xử | Mức còn lại | Dấu hiệu theo dõi | Hạn kiểm |
+| --- | --- | --- | --- | --- | --- |
+| R18 | Nguồn dữ liệu bị chính sách mạng của môi trường chặn. `www.win.tue.nl` — nơi tải log BPIC 2015 — bị proxy egress từ chối, mà bất biến của dự án là log tải lúc chạy, không đóng gói vào kho | Mở host đó trong Network access của environment, giữ nguyên danh sách package manager mặc định; hoặc chốt một cách lấy dữ liệu khác và sửa plan theo | **Trung bình** — plan con 3, 5, 8 và 12 không chạy được; theo quy tắc 9, plan chưa sạch để sang code khi còn rủi ro mức này | Thử tải log thất bại. Kiểm ngày 3/10/2026, hai lần, đều bị chặn | Trước 5/10/2026 |
+
+Nguồn của bộ 104 câu cho task 6.5 chưa kiểm nằm ở domain nào, nên chưa biết có vướng R18 không — kiểm cùng lúc.
+
+Khẩu phần 65 task trong 8 tuần vẫn là giả thuyết, không phải rủi ro có dấu hiệu riêng; cách kiểm ghi ở cuối mục tự review.
+
 ## Tự review theo cổng plan — 3/10/2026
 
 Chạy bảy câu của `docs/process/Quy trình làm việc — spec, plan, code.md` trên chính plan này, theo quy tắc 6.
@@ -316,5 +328,7 @@ Chạy bảy câu của `docs/process/Quy trình làm việc — spec, plan, cod
 | 7 | Thứ tự cắt khi chậm đã viết ra trước chưa? | Đạt — ba nhát cắt ghi ở bảng mười ba plan con và ở từng plan con liên quan |
 
 **Chỗ tôi tự thấy yếu và đã sửa trước khi gửi:** bản nháp đầu đặt plan con 3 ở vị trí đầu tiên theo đúng chữ của spec, nhưng như vậy thì log được tải về máy trước khi bước CI chặn dữ liệu tồn tại — một đường để lọt `.xes` vào kho. Đã đổi: plan con 1 đi trước, plan con 3 vẫn là *task đầu tiên về dữ liệu* và vẫn không lồng vào giữa như spec yêu cầu.
+
+**Làm lại sau lần soát ngày 3/10 theo yêu cầu của chủ dự án.** Lần đề xuất đầu, plan này vi phạm bốn quy tắc: quy tắc 3 (chỉ một quyết định có phương án bị loại), quy tắc 4 (dẫn nguồn từ trí nhớ, không mở), quy tắc 5 (không ghi bản quyết định kiến trúc cho quyết định của chính mình), quy tắc 8 (commit trước khi trình). Đã vá: hai bản quyết định kiến trúc ở `docs/decisions/`, mỗi cái ba phương án và tiêu chí viết trước; nguồn cho test âm đã mở thật (ESLint `RuleTester` bắt buộc ca `invalid`, OPA Rego khuyến nghị ca `deny`); dòng cổng ra của plan con 1 sửa cho khớp phạm vi đã chốt. Một khẳng định trong đề xuất cũng sai và đã bỏ: tôi nói thu hẹp test âm từ bảy việc xuống bốn, nhưng bảng task vốn chỉ có bốn — sai nằm ở dòng cổng ra nói "mỗi cổng", không nằm ở số việc.
 
 **Chỗ còn là giả thuyết, chưa có bằng chứng:** khẩu phần từng plan con trong một tuần. Lộ trình chốt tám tuần và việc chính mỗi tuần, nhưng chưa ai đo một task như 2.5 hay 7.4 mất bao lâu. Cách kiểm: hết tuần 1, so số task đã xong với số task đã xếp, rồi chỉnh khẩu phần tuần 2 trở đi trước khi cầu dao kịp nhảy.
