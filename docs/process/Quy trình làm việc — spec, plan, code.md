@@ -1,6 +1,6 @@
 # Quy trình làm việc — spec, plan, code
 
-Oct 3, 2026 · @ngoc han
+Oct 3, 2026 · @ngoc thuan
 
 Tài liệu này là phần **biểu mẫu** của bộ quy tắc. Phần ràng buộc — chín quy tắc, bất biến, cổng máy, kỷ luật cắt phạm vi — nằm ở `CLAUDE.md` ở gốc kho và không lặp lại ở đây. Khi hai tài liệu có vẻ mâu thuẫn, `CLAUDE.md` thắng.
 

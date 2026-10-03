@@ -1,6 +1,6 @@
 # Praxon — quy tắc vận hành dự án
 
-Chủ dự án: @ngoc han. Bộ quy tắc dưới đây do chủ dự án đặt ngày 3/10/2026 và là **luật của kho này**: phiên làm việc nào cũng đọc trước khi làm, và khi một việc mâu thuẫn với nó thì dừng và hỏi, không tự quyết.
+Chủ dự án: @ngoc thuan. Bộ quy tắc dưới đây do chủ dự án đặt ngày 3/10/2026 và là **luật của kho này**: phiên làm việc nào cũng đọc trước khi làm, và khi một việc mâu thuẫn với nó thì dừng và hỏi, không tự quyết.
 
 Tài liệu này giữ phần *ràng buộc*. Phần *biểu mẫu* — mẫu spec, mẫu plan, mẫu task, mẫu review, mẫu đề xuất, mẫu bản quyết định kiến trúc — nằm ở [`docs/process/Quy trình làm việc — spec, plan, code.md`](docs/process/Quy%20tr%C3%ACnh%20l%C3%A0m%20vi%E1%BB%87c%20%E2%80%94%20spec,%20plan,%20code.md). Hai tài liệu không lặp nội dung của nhau.
 
