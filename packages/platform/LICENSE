@@ -1,0 +1,24 @@
+Business Source License 1.1
+
+SPDX-License-Identifier: BUSL-1.1
+
+Licensed Work:     praxon-platform
+Change License:    Apache License, Version 2.0
+Change Date:       two years after the date each version is first made
+                   available, set per release
+
+!! TOÀN VĂN GIẤY PHÉP CHƯA CÓ TRONG TỆP NÀY !!
+
+Toàn văn BSL 1.1 phải lấy từ nguồn gốc (mariadb.com/bsl11) và dán vào đây,
+cùng với hai tham số chỉ chủ dự án quyết được: dòng "Licensor" và phần
+"Additional Use Grant". Ngày 3/10/2026 mariadb.com bị chính sách mạng của
+môi trường phát triển chặn, và viết lại một văn bản pháp lý từ trí nhớ thì
+sai một chữ cũng thành rủi ro pháp lý, nên tệp này để trống có chủ ý thay vì
+đoán.
+
+Việc này KHÔNG chặn việc viết mã: gói platform chưa có nội dung nào trước
+giai đoạn 3. Nó chặn việc phát hành. Cổng đã có sẵn trong lộ trình: "rà pháp
+lý trước khi bán" ở giai đoạn 4, thuộc nhóm không bao giờ cắt.
+
+Cho tới khi có toàn văn, không phát hành, không phân phối, không chia sẻ gói
+này ra ngoài kho.

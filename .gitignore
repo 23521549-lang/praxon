@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+build/
+dist/
+.venv/
+
+# Dữ liệu bên thứ ba tải lúc chạy. Bất biến của dự án là nó không nằm trong
+# kho; cổng tools/check_thirdparty_data.py canh, và dòng này để một lần tải về
+# không vô tình bị commit.
+data/
+
+# Tệp mà test âm của hợp đồng import tạo ra trong lúc chạy. Nó luôn được xóa ở
+# khối finally, nhưng nếu tiến trình bị giết giữa chừng thì dòng này bảo đảm
+# tệp sót lại không thể lọt vào một commit.
+**/_gate_probe_*.py

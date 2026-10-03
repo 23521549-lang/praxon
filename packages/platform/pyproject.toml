@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praxon-platform"
+version = "0.0.0"
+description = "Đóng gói thương mại: đa tenant, hạn mức, phân vai duyệt, xuất audit"
+requires-python = ">=3.11"
+license = "BUSL-1.1"
+license-files = ["LICENSE"]
+dependencies = [
+    "praxon-core",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

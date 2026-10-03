@@ -1,0 +1,9 @@
+# Khóa phiên bản: cùng một bộ công cụ ở máy phát triển và ở CI, nếu không thì
+# "xanh ở máy tôi" không nói gì về CI. Nâng phiên bản là một thay đổi có chủ ý,
+# đi qua cổng duyệt như mọi thay đổi khác.
+import-linter==2.15
+mypy==2.4.0
+pip-licenses==5.5.5
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.10

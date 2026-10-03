@@ -1,0 +1,37 @@
+# Cấu hình bộ công cụ dùng chung cho cả hai gói. Cố ý KHÔNG có mục [project]:
+# gốc kho không phải một distribution. Hai distribution thật nằm ở
+# packages/core và packages/platform, mỗi gói một pyproject và một tệp giấy
+# phép — lý do ở docs/decisions/0003. Đặt cấu hình công cụ ở một chỗ để nó
+# không trôi giữa hai gói.
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+src = ["packages/core/src", "packages/platform/src", "tools", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "ANN", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D100", "D103", "ANN001", "ANN201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["packages/core/src", "packages/platform/src", "tools", "tests"]
+mypy_path = "packages/core/src:packages/platform/src"
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=praxon_core --cov-report=term-missing --cov-fail-under=85 -q"
+
+[tool.coverage.run]
+branch = true

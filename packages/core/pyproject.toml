@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praxon-core"
+version = "0.0.0"
+description = "Lớp cá nhân hóa: bốn tầng memory kèm cổng duyệt theo mức rủi ro"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "pydantic>=2.13,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
