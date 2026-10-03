@@ -46,25 +46,34 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 ## Plan con 1 — Nền móng kho và cổng máy
 
-**Tuần:** 1 · **Mục tiêu:** mọi cổng máy trong `CLAUDE.md` chạy và chặn được merge, *trước* khi có dòng mã nghiệp vụ nào.
-**Cổng ra:** CI xanh, và **bốn cổng do dự án tự viết** có test âm — một vi phạm cố ý làm cổng đó trả mã khác 0 — chứng minh cổng không phải trang trí: hợp đồng import-linter (task 1.2), pip-licenses (1.4), script tìm biến môi trường (1.6), script chặn dữ liệu (1.7). mypy strict, ruff và cổng độ phủ không cần test âm; lý do và tiền lệ ở `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md`.
-**Bất biến chạm tới:** `core` không import `platform`; một mã nguồn không hai nhánh; hạn mức là dữ liệu không hard-code.
+**Tuần:** 1 · **Trạng thái: xong 3/10/2026, chờ duyệt commit**
+**Mục tiêu:** mọi cổng máy trong `CLAUDE.md` chạy và chặn được merge, *trước* khi có dòng mã nghiệp vụ nào.
+**Cổng ra:** CI xanh, và **năm cổng do dự án tự viết** có test âm — một vi phạm cố ý làm cổng đó trả mã khác 0: hợp đồng import-linter (1.2), pip-licenses (1.4), script biến môi trường (1.6), script chặn dữ liệu (1.7), cổng trùng tên stdlib (1.8). mypy strict, ruff và cổng độ phủ không cần test âm; lý do ở `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md`.
+**Bất biến chạm tới:** `core` không import `platform`; một mã nguồn không hai nhánh; hạn mức là dữ liệu không hard-code; dữ liệu bên thứ ba không nằm trong kho.
 **Phụ thuộc:** không.
-**Thứ tự cắt:** không cắt gì. Spec nói độ phủ áp *từ commit đầu tiên*, nên plan con này đi trước mọi plan con khác.
+**Thứ tự cắt:** không cắt gì.
 
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
-| 1.1 | Cấu trúc gói `core/` và `platform/`, `pyproject.toml`, khóa phiên bản phụ thuộc | `pip install -e .` xong; `python -c "import core"` mã thoát 0 | chưa làm | chưa review |
-| 1.2 | Bốn hợp đồng import-linter: core ⇸ platform, SDK mô hình chỉ trong `adapters`, driver cơ sở dữ liệu chỉ trong `repositories`, client MCP và SDK agent chỉ trong `gateway` và `adapters`; bắt buộc `include_external_packages = True` | `lint-imports` mã thoát 0; thêm tạm một import vi phạm từng hợp đồng → mã thoát khác 0, bốn lần | chưa làm | chưa review |
-| 1.3 | mypy strict, ruff, ruff format | `mypy --strict core` 0 lỗi; `ruff check` và `ruff format --check` 0 lỗi | chưa làm | chưa review |
-| 1.4 | pip-licenses chạy trần, không qua ống dẫn; khớp một phần theo từ khóa AGPL, GPL, UNKNOWN | Mã thoát 0 trên bộ phụ thuộc hiện tại; thêm tạm một gói AGPL → mã thoát khác 0 | chưa làm | chưa review |
-| 1.5 | Cổng độ phủ 85% trên `core` | `pytest --cov=core --cov-fail-under=85` xanh | chưa làm | chưa review |
-| 1.6 | Module settings có kiểu, nạp từ một tệp; bước CI tìm `os.environ` và `getenv` ngoài module đó | Test nạp cấu hình sai kiểu bị từ chối; script grep mã thoát 0, và khác 0 khi đặt tạm một `getenv` ngoài settings | chưa làm | chưa review |
-| 1.7 | Bước CI chặn `.xes`, `.csv`, `.gz` trong kho ngoài thư mục fixture | Script mã thoát 0; thêm tạm một tệp `.xes` ngoài fixture → mã thoát khác 0 | chưa làm | chưa review |
+| 1.1 | Hai distribution trong một kho: `packages/core` (`praxon_core`, Apache-2.0) và `packages/platform` (`praxon_platform`, BUSL-1.1), mỗi gói một `pyproject.toml` và một tệp giấy phép; cấu hình bộ công cụ dùng chung ở gốc kho; khóa phiên bản trong `requirements-dev.txt` — theo `docs/decisions/0003` | `pip install -e packages/core -e packages/platform` xong; `import praxon_core` và `import praxon_platform` mã thoát 0 | xong | **đạt** — toàn văn Apache-2.0 lấy từ apache.org (11.358 byte). Toàn văn BUSL-1.1 **chưa có**: mariadb.com bị chặn, nên tệp giấy phép của platform ghi rõ là để trống có chủ ý thay vì đoán. Không chặn viết mã, chặn phát hành; cổng đã có ở giai đoạn 4 |
+| 1.2 | Bốn hợp đồng import-linter, `include_external_packages = True`, mỗi hợp đồng kèm `broken_contract_guidance` | `python -m importlinter.cli` mã thoát 0; 11 test âm: mỗi import bị cấm đặt ngoài thư mục được phép thì đỏ, cùng import đó trong thư mục được phép thì xanh | xong | **đạt** — đã thử loại hợp đồng `protected` (khai đúng ý hơn) nhưng nó đòi module được bảo vệ có mặt trong đồ thị và báo `"openai" not present in the graph`; các thư viện ngoài chưa cài nên dùng `forbidden` kèm allowlist mẫu `.**`. Lý do ghi trong `.importlinter`. Cũng tìm ra `unmatched_ignore_imports_alerting` là trường của **từng hợp đồng**, không phải mục chung |
+| 1.3 | mypy strict, ruff, ruff format, cấu hình ở gốc kho | `python -m mypy` 0 lỗi trên 25 tệp; `ruff check` và `ruff format --check` 0 lỗi | xong | **đạt** — xem ghi chú về phiên bản ở task 1.9: lỗi `pydantic` không phân giải được là do gọi binary mypy 1.20.2 trên PATH thay vì module 2.4.0 |
+| 1.4 | pip-licenses chạy trần, không qua ống dẫn; khớp một phần theo từ khóa | Mã thoát 0 trên cây phụ thuộc của core; test âm bắt AGPL, GPL, LGPL, UNKNOWN và tên viết đủ chữ, cho qua MIT, Apache, BSD, ISC, MPL, PSF | xong | **đạt, sau hai lần sửa.** Lần đầu cổng chấm môi trường phát triển nên báo nhầm sáu gói của hệ điều hành (PyGObject, python-apt, launchpadlib…) — một cổng báo nhầm sáu dòng ngay lần chạy đầu thì sẽ bị tắt chứ không bị sửa; sửa thành chấm trong môi trường trống chỉ có core, qua `pip-licenses --python`. Lần hai test âm bắt được một lỗ thật: từ khóa `agpl`/`gpl` **không** khớp `"GNU Affero General Public License v3"`, nên thêm từ khóa `general public license`. Đây là chỗ **rộng hơn chữ của spec đúng một từ khóa**, và chỉ theo chiều chặt hơn |
+| 1.5 | Cổng độ phủ 85% trên `praxon_core`, áp từ commit đầu | `python -m pytest` xanh, độ phủ đạt ngưỡng | xong | **đạt** — 55 test, độ phủ `praxon_core` 100% (20 câu lệnh, 4 nhánh). Ngưỡng là 85%, con số 100% hôm nay chỉ vì gói còn nhỏ |
+| 1.6 | Module settings có kiểu, nạp từ tệp TOML, `extra="forbid"` và `frozen=True`; cổng biến môi trường bằng **phân tích cú pháp** | 6 test settings; test âm: bắt `os.environ`, `os.getenv`, `from os import getenv` ngoài settings, cho phép trong settings, **không báo nhầm** trên chú thích và chuỗi ký tự | xong | **đạt** — dùng AST chứ không khớp chuỗi, vì một cổng báo nhầm thì sớm muộn bị tắt. `frozen=True` vì điều kiện tái lập đòi `config_hash` không đổi giữa một lần chạy |
+| 1.7 | Cổng chặn `.xes`, `.csv`, `.gz` trong kho ngoài `tests/fixtures/`; hỏi `git ls-files` chứ không quét đĩa | Mã thoát 0 trên kho hiện tại; test âm bắt 4 đường dẫn vi phạm, cho qua fixture | xong | **đạt** — hỏi git chứ không quét đĩa là đúng ý bất biến: tải về để chạy thì được, commit mới là vi phạm. Thêm `data/` vào `.gitignore` để một lần tải về không lọt vào commit |
+| 1.8 | **Mới, từ `docs/decisions/0003`.** Phép thử ranh giới: cài `praxon-core` một mình vào môi trường trống; cộng cổng chặn gói cấp cao nhất trùng tên module thư viện chuẩn | `import praxon_core` chạy, `import praxon_platform` thất bại trong môi trường đó (9,4 giây); test âm dùng chính môi trường phát triển làm ca âm — ở đó platform **có** cài nên cổng phải báo | xong | **đạt** — đây là thứ import-linter một mình không chứng minh được: import-linter đọc mã nguồn, cổng này đọc gói đã cài. Nếu `praxon-core` vô tình khai `praxon-platform` là phụ thuộc thì import-linter vẫn xanh, cổng này đỏ |
+| 1.9 | **Mới, tôi thêm — cần bạn duyệt.** Cổng canh phiên bản công cụ đang chạy khớp `requirements-dev.txt` | `python -m tools.check_tool_versions` mã thoát 0; test âm bắt phiên bản lệch và gói chưa cài | xong | **đạt, nhưng ngoài phạm vi plan đã duyệt.** Lý do thêm: phép thử cho thấy `mypy` trên PATH là **1.20.2** còn `python3 -m mypy` là **2.4.0**; `ruff` trên PATH là 0.15.20 còn module là 0.16.10. Ghim phiên bản mà shell gọi binary khác thì ghim không có tác dụng gì, và "xanh ở máy tôi" không nói gì về CI. CI nay gọi mọi công cụ qua `python -m` |
+| 1.10 | Nối toàn bộ vào `.github/workflows/ci.yml`, mỗi cổng một bước riêng | 12 bước, không bước nào gộp bằng `&&` | xong | **đạt** — không gộp bằng `&&` vì gộp thì bước đầu đỏ che mọi bước sau, và một lần chạy CI chỉ cho biết một lỗi |
 
-**Review plan con 1** — ngày: · người review: · kết luận:
+**Review plan con 1** — ngày 3/10/2026 · người review: tôi tự review, chờ chủ dự án duyệt
 
----
+- **Đạt mục tiêu chưa:** đạt. Mười cổng chạy, năm cổng tự viết đều có test âm đã thấy đỏ thật.
+- **Các task còn khớp nhau không:** còn. Task 1.4 và 1.8 nay dùng chung một helper `tools/core_env.py` vì cả hai hỏi cùng một câu — *core một mình kéo theo những gì* — nên phải hỏi trên cùng một môi trường.
+- **Task thành vô nghĩa hoặc còn thiếu:** thiếu hai, đã thêm thành 1.8 và 1.9. Không task nào thành vô nghĩa.
+- **Nợ kỹ thuật để lại:** một, có chủ ý và có cổng sẵn — toàn văn BUSL-1.1 chưa có trong `packages/platform/LICENSE` vì mariadb.com bị chặn. Không ràng buộc mã; chặn phát hành; cổng "rà pháp lý trước khi bán" ở giai đoạn 4 thuộc nhóm không bao giờ cắt.
+- **Phạm vi có vượt plan không:** vượt một task — 1.9 — và tôi ghi rõ thay vì lồng vào im lặng.
+- **Kết luận:** đạt. Sang plan con 2 được, nó không phụ thuộc R18.
 
 ## Plan con 2 — Lược đồ và bất biến dữ liệu
 
