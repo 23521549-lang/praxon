@@ -138,6 +138,13 @@ Khẩu phần cố định, phạm vi co giãn. Đến 50% thời gian một gia
 
 Cắt một việc nghĩa là chuyển nó sang danh sách để sau có ghi lý do, không phải làm nó dở dang. Việc dở dang là nợ kỹ thuật.
 
+## Quy tắc commit
+
+- **Một dòng, một `-m`.** Mỗi commit có đúng một dòng thông điệp, viết bằng một `-m`. Không `-F`, không heredoc, không thân commit nhiều đoạn.
+- **Không ghi chính mình vào commit.** Không `Co-Authored-By`, không dòng phiên làm việc, không tên hay định danh mô hình ở bất cứ đâu trong thông điệp. Lịch sử kho ghi *việc gì đã thay đổi*, không ghi *ai hay cái gì đã đánh máy*.
+- **Áp cho mọi commit trong kho này**, kể cả commit trên nhánh làm việc rồi gộp vào `main`: gộp chính là lúc dòng attribution lọt vào `main`.
+- Thông điệp không gói nổi trong một dòng nghĩa là commit đang gộp nhiều việc. Tách thành nhiều commit, không tách bằng cách viết thêm đoạn.
+
 ## Nơi lưu tài liệu
 
 | Đường dẫn | Chứa gì | Ai sửa |
