@@ -199,7 +199,7 @@ Mọi mục dưới đây đều có một cách kiểm tự động đi kèm.
 | Ranh giới gói | `core` không bao giờ import `platform` | import-linter trong CI, mã thoát khác 0 thì chặn merge |
 | Gọi mô hình | Chỉ qua một adapter với giao diện `LanguageModel` | import-linter cấm SDK mô hình ngoài thư mục adapter; bắt buộc `include_external_packages = True`, thiếu dòng này luật về thư viện bên ngoài không chạy |
 | Truy cập dữ liệu | Chỉ qua module repository | import-linter cấm driver cơ sở dữ liệu ngoài `repositories` |
-| Giấy phép phụ thuộc | Core không phụ thuộc thư viện AGPL hay không có giấy phép | pip-licenses trong CI, khớp một phần theo từ khóa AGPL, GPL và UNKNOWN vì mỗi gói khai một kiểu; chạy trần, không qua ống dẫn, vì ống dẫn nuốt mã thoát |
+| Giấy phép phụ thuộc | Core không phụ thuộc thư viện AGPL hay không có giấy phép | pip-licenses trong CI, khớp một phần theo từ khóa `agpl`, `gpl`, `general public license` và `unknown` (rộng hơn chữ cũ đúng một từ khóa, chỉ theo chiều chặt hơn — test âm 3/10/2026 chứng minh `GNU Affero General Public License v3` không chứa chuỗi `gpl`); chạy trần, không qua ống dẫn, vì ống dẫn nuốt mã thoát |
 | Cách ly tenant | RLS trong cơ sở dữ liệu | Bộ test tích hợp chạy dưới đúng vai ứng dụng, không bao giờ dưới tài khoản quản trị |
 | Bất biến dữ liệu | Quyền theo vai, exclusion constraint, ràng buộc duy nhất | Cùng bộ test tích hợp: 21 phép tấn công phải bị chặn |
 | Kiểu dữ liệu | Chú thích kiểu đầy đủ; `Trajectory`, `Insight`, `Delta`, `Candidate`, `Decision` là kiểu có khai báo | mypy strict trên `core` |
