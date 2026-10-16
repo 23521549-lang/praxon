@@ -1,6 +1,6 @@
 # Plan giai đoạn 1 — lõi học
 
-Oct 3, 2026 · @ngoc thuan · **trạng thái: nội dung đã duyệt 3/10/2026; chưa sạch để sang code vì R18 còn ở mức trung bình**
+Oct 3, 2026 · @ngoc thuan · **trạng thái: nội dung đã duyệt 3/10/2026; R18 đã xử 16/10/2026 (đổi nguồn tải log sang 4TU, ADR 0004), còn ở mức nhẹ — plan sạch để sang code theo quy tắc 9**
 
 Hai quyết định ràng buộc của plan này nằm ở `docs/decisions/0001-cach-chia-plan-giai-doan-1.md` (cách chia) và `docs/decisions/0002-pham-vi-test-am-cho-cong-may.md` (phạm vi test âm).
 
@@ -106,7 +106,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
-| 3.1 | Bộ tải log BPIC 2015 từ nguồn gốc, kiểm băm, không đóng gói vào kho | Lệnh tải xong, băm khớp giá trị đã ghi; bước CI chặn dữ liệu vẫn mã thoát 0 | chưa làm | chưa review |
+| 3.1 | Bộ tải log BPIC 2015 từ 5 dataset 4TU.ResearchData (URL từng đô thị trong ADR 0004), kiểm băm, không đóng gói vào kho | Lệnh tải xong, băm khớp giá trị đã ghi; bước CI chặn dữ liệu vẫn mã thoát 0 | chưa làm | chưa review |
 | 3.2 | Bảng hồ sơ: số case, số sự kiện, số loại hoạt động, phân phối theo thời gian, danh sách thuộc tính phân loại có mặt | Lệnh in bảng; số case khớp 1.199 / 832 / 1.409 / 1.053 / 1.156 — đối chiếu bài báo số 1 của BPIC 2015 | chưa làm | chưa review |
 | 3.3 | Chia theo thời điểm bắt đầu case 60/20/20; `data_hash` băm tệp log, tham số chia, danh sách tenant | Test: không case nào nằm ở hai phần; mọi case ở phần học bắt đầu trước mọi case ở phần đo; đổi tham số chia thì `data_hash` đổi | chưa làm | chưa review |
 | 3.4 | Báo cáo mức khác biệt giữa năm đô thị và số hoạt động còn lại sau lọc | Báo cáo sinh bằng lệnh, có số; nếu log hỏng hoặc thiếu trường thì dừng và quay về spec | chưa làm | chưa review |
@@ -316,7 +316,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 | # | Rủi ro | Cách xử | Mức còn lại | Dấu hiệu theo dõi | Hạn kiểm |
 | --- | --- | --- | --- | --- | --- |
-| R18 | Nguồn dữ liệu bị chính sách mạng của môi trường chặn. `www.win.tue.nl` — nơi tải log BPIC 2015 — bị proxy egress từ chối, mà bất biến của dự án là log tải lúc chạy, không đóng gói vào kho | Mở host đó trong Network access của environment, giữ nguyên danh sách package manager mặc định; hoặc chốt một cách lấy dữ liệu khác và sửa plan theo | **Trung bình** — plan con 3, 5, 8 và 12 không chạy được; theo quy tắc 9, plan chưa sạch để sang code khi còn rủi ro mức này | Thử tải log thất bại. Kiểm ngày 3/10/2026, hai lần, đều bị chặn | Trước 5/10/2026 |
+| R18 | Nguồn dữ liệu bị chính sách mạng của môi trường chặn. `www.win.tue.nl` — nơi tải log BPIC 2015 — bị proxy egress từ chối (kiểm 3/10/2026, hai lần), mà bất biến của dự án là log tải lúc chạy, không đóng gói vào kho | **Đã chốt 16/10/2026 (ADR 0004):** tải từ 5 dataset 4TU.ResearchData thay vì `www.win.tue.nl`; bất biến giữ nguyên | **Nhẹ** — nguồn có DOI ổn định, trang dataset mở được từ môi trường ngày 16/10/2026; tính đúng đắn của dữ liệu do task 3.1 (kiểm băm) và 3.2 (đối chiếu số case với bài báo số 1) canh | Task 3.1 tải thất bại hoặc băm không khớp | Task 3.1 |
 
 Nguồn của bộ 104 câu cho task 6.5 chưa kiểm nằm ở domain nào, nên chưa biết có vướng R18 không — kiểm cùng lúc.
 
