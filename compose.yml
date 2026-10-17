@@ -1,0 +1,29 @@
+# Praxon — một tệp dựng cả hệ dữ liệu cho phát triển và CI (plan con 2, task 2.1).
+#
+# Image đã ghim tag 0.8.7-pg16 (Postgres 16 + pgvector). Nâng tag là một thay đổi
+# có chủ ý, đi qua cổng duyệt như mọi thay đổi khác (quy ước như requirements-dev.txt).
+#
+# Credentials dưới đây CHỈ cho máy phát triển và CI. Không phải secret thật và
+# không dùng ở bất kỳ môi trường nào khác.
+
+name: praxon
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: praxon
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: praxon-dev-only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d praxon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
