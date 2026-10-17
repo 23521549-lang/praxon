@@ -40,6 +40,9 @@ TENANT_FUNCTIONS = tuple(f for f in FUNCTIONS if f != "promoter")
 
 _TENANT_SLUG_PATTERN = re.compile(r"^[a-z0-9-]{1,63}$")
 _RESERVED_SLUGS = frozenset({"promoter", "public", *FUNCTIONS})
+#: Độ dài tối đa của tên vai Postgres là 63 byte. Slug dài nhất phải chừa chỗ
+#: cho "__" và tên chức năng dài nhất ("coordinator", 11 ký tự).
+_MAX_SLUG_LEN = 63 - 2 - max(len(f) for f in TENANT_FUNCTIONS)
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,11 @@ def provision_tenant(dsn: str, slug: str, password: str) -> list[str]:
     """
     if not _TENANT_SLUG_PATTERN.match(slug) or slug in _RESERVED_SLUGS:
         raise ValueError(f"slug tenant không hợp lệ: {slug!r}")
+    if len(slug) > _MAX_SLUG_LEN:
+        raise ValueError(
+            f"slug tenant quá dài ({len(slug)} > {_MAX_SLUG_LEN}): "
+            "tên vai '<slug>__<chức-năng>' vượt 63 ký tự của Postgres"
+        )
     try:
         from psycopg.sql import SQL, Identifier, Literal
     except ImportError as exc:

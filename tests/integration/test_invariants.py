@@ -1,4 +1,4 @@
-"""24 phép tấn công trên 6 bất biến dữ liệu (plan con 2, task 2.5).
+"""25 phép tấn công trên 6 bất biến dữ liệu (plan con 2, task 2.5).
 
 Mỗi test là một phép tấn công độc lập, chạy dưới đúng vai ứng dụng (xem `as_role`
 trong conftest — fail ngay nếu vai là superuser). "Bị chặn" nghĩa là một trong:
@@ -170,6 +170,16 @@ def test_bd3_khong_ap_duoc_candidate_cua_tenant_khac(pg: None) -> None:
         conn.execute("UPDATE candidate SET status = 'approved' WHERE id = %s", (candidate_id,))
     with as_role("acme__applier") as conn, pytest.raises(RaiseException):
         _apply_candidate(conn, "acme", candidate_id, _unique_key("bd3"))
+
+
+def test_bd3_curator_khong_tu_duyet_duoc_candidate(pg: None) -> None:
+    # Curator INSERT thẳng status='approved' để qua mặt governor: policy chặn.
+    with as_role("acme__curator") as conn, pytest.raises(InsufficientPrivilege):
+        conn.execute(
+            "INSERT INTO candidate (id, tenant_id, target_scope, status) "
+            "VALUES (%s, 'acme', 'tenant', 'approved')",
+            (str(uuid.uuid4()),),
+        )
 
 
 # --- BĐ4: chỉ promoter ghi global -------------------------------------------------
