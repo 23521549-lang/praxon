@@ -13,11 +13,12 @@ from .conftest import ADMIN_DSN, TENANT_PASSWORD, _dsn_for
 
 def test_discover_thay_3_migration_theo_thu_tu() -> None:
     found = migrations.discover()
-    assert [m.version for m in found] == [1, 2, 3]
+    assert [m.version for m in found] == [1, 2, 3, 4]
     assert [m.name for m in found] == [
         "V1__tables.sql",
         "V2__roles.sql",
         "V3__rls.sql",
+        "V4__fact_candidate_approved.sql",
     ]
     assert all(m.sql.strip() for m in found)
 

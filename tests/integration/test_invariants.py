@@ -1,4 +1,4 @@
-"""21 phép tấn công trên 6 bất biến dữ liệu (plan con 2, task 2.5).
+"""24 phép tấn công trên 6 bất biến dữ liệu (plan con 2, task 2.5).
 
 Mỗi test là một phép tấn công độc lập, chạy dưới đúng vai ứng dụng (xem `as_role`
 trong conftest — fail ngay nếu vai là superuser). "Bị chặn" nghĩa là một trong:
@@ -18,7 +18,12 @@ from typing import Any
 
 import pytest
 from psycopg import Connection
-from psycopg.errors import ExclusionViolation, InsufficientPrivilege, UniqueViolation
+from psycopg.errors import (
+    ExclusionViolation,
+    InsufficientPrivilege,
+    RaiseException,
+    UniqueViolation,
+)
 
 from .conftest import as_role, one
 
@@ -132,6 +137,39 @@ def test_bd3_coordinator_khong_insert_duoc_fact(pg: None) -> None:
             _insert_fact_sql(),
             ("acme", "tenant", _unique_key("bd3"), "[2020-01-01,2021-01-01)"),
         )
+
+
+def test_bd3_khong_ap_duoc_candidate_chua_duyet(pg: None) -> None:
+    # Candidate ở trạng thái 'proposed' (chưa có quyết định) thì applier không áp được.
+    candidate_id = str(uuid.uuid4())
+    with as_role("acme__curator") as conn:
+        conn.execute(
+            "INSERT INTO candidate (id, tenant_id, target_scope) VALUES (%s, 'acme', 'tenant')",
+            (candidate_id,),
+        )
+    with as_role("acme__applier") as conn, pytest.raises(RaiseException):
+        _apply_candidate(conn, "acme", candidate_id, _unique_key("bd3"))
+
+
+def test_bd3_khong_ap_duoc_candidate_khong_ton_tai(pg: None) -> None:
+    # candidate_id trỏ tới candidate không có thật: trigger chặn trước khóa ngoại.
+    with as_role("acme__applier") as conn, pytest.raises(RaiseException):
+        _apply_candidate(conn, "acme", str(uuid.uuid4()), _unique_key("bd3"))
+
+
+def test_bd3_khong_ap_duoc_candidate_cua_tenant_khac(pg: None) -> None:
+    # Candidate đã duyệt nhưng của tenant khác: RLS trong trigger không thấy → chặn.
+    candidate_id = str(uuid.uuid4())
+    with as_role("globex__curator") as conn:
+        conn.execute(
+            "INSERT INTO candidate (id, tenant_id, target_scope) "
+            "VALUES (%s, 'globex', 'tenant')",
+            (candidate_id,),
+        )
+    with as_role("globex__governor") as conn:
+        conn.execute("UPDATE candidate SET status = 'approved' WHERE id = %s", (candidate_id,))
+    with as_role("acme__applier") as conn, pytest.raises(RaiseException):
+        _apply_candidate(conn, "acme", candidate_id, _unique_key("bd3"))
 
 
 # --- BĐ4: chỉ promoter ghi global -------------------------------------------------
