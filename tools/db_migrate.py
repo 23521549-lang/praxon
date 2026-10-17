@@ -26,7 +26,7 @@ def _resolve_dsn(explicit: str | None) -> str:
     if not dsn:
         raise SystemExit(
             f"thiếu DSN: truyền --dsn hoặc đặt biến môi trường {ENV_VAR}, ví dụ "
-            "postgresql://postgres:praxon-dev-only@localhost:5432/praxon"
+            "postgresql://postgres@localhost:5432/praxon (mật khẩu lấy từ .env)"
         )
     return dsn
 
@@ -51,6 +51,17 @@ def main() -> int:
         "--tenant-password",
         default=None,
         help="Mật khẩu cho vai tenant mới; mặc định sinh ngẫu nhiên và in ra.",
+    )
+    parser.add_argument(
+        "--promoter-password",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="MẬT_KHẨU",
+        help=(
+            "Đặt mật khẩu cho vai login toàn cục 'promoter' (tạo NOLOGIN trong V2, "
+            "chưa có mật khẩu). Không cho giá trị thì sinh ngẫu nhiên và in ra."
+        ),
     )
     args = parser.parse_args()
 
@@ -79,6 +90,11 @@ def main() -> int:
             print(f"tenant {slug}: đã tạo {len(created)} vai (mật khẩu: {password})")
         else:
             print(f"tenant {slug}: vai đã tồn tại, không tạo thêm.")
+
+    if args.promoter_password is not None:
+        promoter_password = args.promoter_password or secrets.token_urlsafe(16)
+        migrations.set_role_password(dsn, "promoter", promoter_password)
+        print(f"vai promoter: đã đặt mật khẩu (mật khẩu: {promoter_password})")
     return 0
 
 

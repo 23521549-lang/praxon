@@ -37,7 +37,10 @@ BEGIN
         END IF;
     END LOOP;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'promoter') THEN
-        CREATE ROLE promoter LOGIN PASSWORD 'promoter-dev-only' IN ROLE g_promoter;
+        -- Vai login toàn cục duy nhất. KHÔNG đặt mật khẩu ở đây: mật khẩu được
+        -- đặt lúc provision/test (xem migrate.set_role_password), không hard-code
+        -- trong migration. NOLOGIN cho tới khi có mật khẩu.
+        CREATE ROLE promoter NOLOGIN IN ROLE g_promoter;
     END IF;
 END
 $$;

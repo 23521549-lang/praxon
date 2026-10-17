@@ -8,7 +8,7 @@ import pytest
 
 from praxon_core.repositories import migrate as migrations
 
-from .conftest import ADMIN_DSN, TENANT_PASSWORD
+from .conftest import ADMIN_DSN, TENANT_PASSWORD, _dsn_for
 
 
 def test_discover_thay_3_migration_theo_thu_tu() -> None:
@@ -49,3 +49,18 @@ def test_apply_luy_dang(pg: None) -> None:
 def test_provision_tenant_luy_dang(pg: None) -> None:
     assert migrations.provision_tenant(ADMIN_DSN, "acme", TENANT_PASSWORD) == []
     assert migrations.provision_tenant(ADMIN_DSN, "globex", TENANT_PASSWORD) == []
+
+
+def test_provision_tenant_cap_nhat_mat_khau(pg: None) -> None:
+    """Provision lại với mật khẩu mới phải cập nhật mật khẩu (không chỉ bỏ qua)."""
+    import secrets
+
+    from psycopg import connect
+
+    new_password = secrets.token_urlsafe(16)
+    assert migrations.provision_tenant(ADMIN_DSN, "acme", new_password) == []
+    # Kết nối được bằng mật khẩu mới — chứng tỏ ALTER ROLE đã chạy.
+    with connect(_dsn_for("acme__ingestor", new_password)):
+        pass
+    # Trả lại mật khẩu của phiên test để các test sau không gãy.
+    assert migrations.provision_tenant(ADMIN_DSN, "acme", TENANT_PASSWORD) == []

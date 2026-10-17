@@ -18,3 +18,6 @@ data/
 # khối finally, nhưng nếu tiến trình bị giết giữa chừng thì dòng này bảo đảm
 # tệp sót lại không thể lọt vào một commit.
 **/_gate_probe_*.py
+
+# Biến môi trường local (mật khẩu dev). Không bao giờ commit.
+.env

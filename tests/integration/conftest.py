@@ -13,6 +13,7 @@ vai ứng dụng — không bao giờ dưới tài khoản quản trị".
 from __future__ import annotations
 
 import os
+import secrets
 import urllib.parse
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,13 +26,14 @@ from praxon_core.repositories import migrate as migrations
 
 ADMIN_DSN = os.environ.get(
     "PRAXON_TEST_DATABASE_URL",
-    "postgresql://postgres:praxon-dev-only@localhost:5432/praxon",
+    "postgresql://postgres@localhost:5432/praxon",
 )
 TENANTS = ("acme", "globex")
-#: Mật khẩu vai test — chỉ dùng cho DB test local/CI, không phải secret thật.
-TENANT_PASSWORD = "test-only"
-#: Khớp mật khẩu vai `promoter` trong V2__roles.sql.
-PROMOTER_PASSWORD = "promoter-dev-only"
+#: Mật khẩu sinh ngẫu nhiên mỗi phiên test — không hard-code trong repo.
+TENANT_PASSWORD = secrets.token_urlsafe(16)
+#: Mật khẩu vai `promoter` sinh ngẫu nhiên mỗi phiên; fixture đặt qua tài khoản
+#: quản trị vì V2 tạo vai này NOLOGIN (không hard-code mật khẩu trong migration).
+PROMOTER_PASSWORD = secrets.token_urlsafe(16)
 
 
 def _dsn_for(user: str, password: str) -> str:
@@ -141,6 +143,9 @@ def pg() -> Iterator[None]:
         )
     for tenant in TENANTS:
         migrations.provision_tenant(ADMIN_DSN, tenant, TENANT_PASSWORD)
+    # Vai promoter tạo NOLOGIN trong V2: đặt mật khẩu ngẫu nhiên qua admin để
+    # test kết nối được. Mật khẩu không hard-code ở bất cứ đâu trong repo.
+    migrations.set_role_password(ADMIN_DSN, "promoter", PROMOTER_PASSWORD)
     _reset_data()
     _seed()
     names = ", ".join(f"V{m.version}" for m in applied) or "không có (schema đã mới nhất)"

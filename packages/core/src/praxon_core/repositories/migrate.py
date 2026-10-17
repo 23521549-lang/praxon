@@ -120,11 +120,36 @@ def apply(dsn: str, *, plan_only: bool = False) -> list[Migration]:
         return pending
 
 
+def _set_role_password(conn: Connection[Any], role: str, password: str) -> None:
+    """Đặt mật khẩu cho một vai (dùng Literal vì ALTER ROLE không tham số hóa được)."""
+    try:
+        from psycopg.sql import SQL, Identifier, Literal
+    except ImportError as exc:
+        raise RuntimeError(
+            "thiếu driver Postgres: cài 'psycopg' và 'psycopg-binary'"
+            " (xem requirements-dev.txt)"
+        ) from exc
+    conn.execute(
+        SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(Identifier(role), Literal(password))
+    )
+
+
+def set_role_password(dsn: str, role: str, password: str) -> None:
+    """Đặt mật khẩu cho một vai DB đã tồn tại (cần quyền quản trị).
+
+    Dùng cho vai `promoter` (tạo NOLOGIN trong V2, chưa có mật khẩu) lúc
+    provision/test. Mật khẩu không bao giờ hard-code trong migration.
+    """
+    with _connect(dsn) as conn:
+        _set_role_password(conn, role, password)
+
+
 def provision_tenant(dsn: str, slug: str, password: str) -> list[str]:
     """Tạo 6 vai login ``<slug>__<chức-năng>`` kế thừa vai nhóm tương ứng.
 
     Slug chỉ gồm chữ thường, số, gạch ngang; không được trùng tên vai hệ thống.
-    Idempotent: vai đã tồn tại thì bỏ qua, không lỗi.
+    Idempotent: vai đã tồn tại thì chỉ cập nhật mật khẩu (để mật khẩu truyền vào
+    luôn hiệu lực), không lỗi; chỉ vai mới tạo mới được trả về.
     """
     if not _TENANT_SLUG_PATTERN.match(slug) or slug in _RESERVED_SLUGS:
         raise ValueError(f"slug tenant không hợp lệ: {slug!r}")
@@ -142,13 +167,19 @@ def provision_tenant(dsn: str, slug: str, password: str) -> list[str]:
             exists = conn.execute(
                 "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
             ).fetchone()
+            # CREATE/ALTER ROLE là utility statement, không tham số hóa được password:
+            # nhúng bằng Literal (đã quote đúng), không nối chuỗi thô.
             if exists is None:
-                # CREATE ROLE là utility statement, không tham số hóa được password:
-                # nhúng bằng Literal (đã quote đúng), không nối chuỗi thô.
                 conn.execute(
                     SQL("CREATE ROLE {} LOGIN PASSWORD {} IN ROLE {}").format(
                         Identifier(role), Literal(password), Identifier(f"g_{function}")
                     )
                 )
                 created.append(role)
+            else:
+                conn.execute(
+                    SQL("ALTER ROLE {} WITH PASSWORD {}").format(
+                        Identifier(role), Literal(password)
+                    )
+                )
     return created
