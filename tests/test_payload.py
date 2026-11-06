@@ -16,7 +16,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from praxon_core.learning.applier import build_fact_row
+from praxon_core.learning.applier import build_fact_close, build_fact_row
 from praxon_core.learning.candidate import DecisionVerdict, FactStatus
 from praxon_core.learning.curator import (
     DeltaKind,
@@ -182,3 +182,76 @@ def test_chuoi_curator_governor_applier_thong_thuan():
     assert row.statement == "A response B"
     assert row.valid_start == VALID_START
     assert row.source_episode_ids == (UUID(EPISODE_ID),)
+
+
+def test_build_fact_row_tu_choi_retire_va_confirm():
+    """RETIRE/CONFIRM không tạo FactRow mới (task P): từ chối, ADD thì nhận."""
+    deltas = curate(
+        _insight(template="not_response"), [_fact("response(A, B)", FactStatus.TRIAL)]
+    )
+    assert len(deltas) == 1 and deltas[0].kind == DeltaKind.RETIRE
+    retire = to_candidate(deltas[0], valid_start=VALID_START).model_copy(
+        update={"status": "approved"}
+    )
+    with pytest.raises(ValueError, match="RETIRE"):
+        build_fact_row(
+            retire, candidate_id="00000000-0000-0000-0000-000000000001", tenant_id="global"
+        )
+    deltas = curate(_insight(), [_fact("response(A, B)", FactStatus.ACTIVE)])
+    assert len(deltas) == 1 and deltas[0].kind == DeltaKind.CONFIRM
+    confirm = to_candidate(deltas[0], valid_start=VALID_START).model_copy(
+        update={"status": "approved"}
+    )
+    with pytest.raises(ValueError, match="CONFIRM"):
+        build_fact_row(
+            confirm, candidate_id="00000000-0000-0000-0000-000000000002", tenant_id="global"
+        )
+    deltas = curate(_insight(), [])
+    assert len(deltas) == 1 and deltas[0].kind == DeltaKind.ADD
+    add = to_candidate(deltas[0], valid_start=VALID_START).model_copy(
+        update={"status": "approved"}
+    )
+    row = build_fact_row(
+        add, candidate_id="00000000-0000-0000-0000-000000000003", tenant_id="global"
+    )
+    assert row.canonical_key == "response(A, B)"
+
+
+def test_build_fact_close_chi_nhan_retire_va_contradict():
+    """build_fact_close chỉ nhận RETIRE/CONTRADICT + cần fact_id + cần đã duyệt."""
+    deltas = curate(
+        _insight(template="not_response"), [_fact("response(A, B)", FactStatus.TRIAL)]
+    )
+    retire = to_candidate(deltas[0], valid_start=VALID_START).model_copy(
+        update={"status": "approved"}
+    )
+    close = build_fact_close(retire, retired_at=datetime(2030, 6, 1, tzinfo=UTC))
+    assert close.fact_id == "f1"
+    assert close.retired_at == datetime(2030, 6, 1, tzinfo=UTC)
+    deltas = curate(_insight(), [])
+    add = to_candidate(deltas[0], valid_start=VALID_START).model_copy(
+        update={"status": "approved"}
+    )
+    with pytest.raises(ValueError, match="RETIRE/CONTRADICT"):
+        build_fact_close(add, retired_at=datetime(2030, 6, 1, tzinfo=UTC))
+    with pytest.raises(ValueError, match="đã duyệt"):
+        build_fact_close(
+            retire.model_copy(update={"status": "proposed"}),
+            retired_at=datetime(2030, 6, 1, tzinfo=UTC),
+        )
+
+
+def test_factpayload_tu_choi_khoa_la():
+    """FactPayload từ chối khóa lạ (extra=forbid) — hợp đồng D+F không nới."""
+    payload = {
+        "canonical_key": "response(A, B)",
+        "template": "response",
+        "statement": "A response B",
+        "valid_start": "2030-01-01T00:00:00+00:00",
+        "fact_canonical_key": "response(A, B)",
+    }
+    with pytest.raises(ValidationError):
+        FactPayload.model_validate(payload)
+    assert FactPayload.model_validate(
+        {k: v for k, v in payload.items() if k != "fact_canonical_key"}
+    )
