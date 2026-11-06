@@ -12,6 +12,7 @@ from praxon_core.eval.metrics import (
     negative_transfer,
     precision,
     recall,
+    violated_flags,
     violation_rate,
 )
 from praxon_core.learning.candidate import FactStatus
@@ -196,3 +197,14 @@ def test_f1_la_trung_binh_dieu_hoa_cua_precision_va_recall():
     assert f1_score(0.0, 0.0) == 0.0
     assert abs(f1_score(1.0, 20 / 56) - 0.5263157894736842) < 1e-12
     assert abs(f1_score(0.5, 0.5) - 0.5) < 1e-12
+
+
+def test_violated_flags_chi_fact_vi_pham_qua_muoi_phan_tram():
+    # Bốn fact: chỉ response(e, f) vi phạm 2/10 trace (> 10%); precedence(c, d)
+    # vi phạm đúng 1/10 nên chưa tính. Tỉ lệ cờ True = 1/4 = tỉ lệ vi phạm.
+    assert violated_flags(_bo_bon_fact(), _muoi_trace()) == [False, False, True, False]
+    assert sum(violated_flags(_bo_bon_fact(), _muoi_trace())) / 4 == pytest.approx(0.25)
+
+
+def test_violated_flags_rong_khi_khong_co_fact_active():
+    assert violated_flags([], _muoi_trace()) == []

@@ -21,9 +21,9 @@ step_04/step_05) và ổn định qua các seed 1, 7, 42, 20261003 (đã đo
 trước khi viết test).
 """
 
-from praxon_core.declare.miner import Rule, discover
-from praxon_core.eval.metrics import Fact, FactScope, f1_score, precision, recall
-from praxon_core.learning.candidate import FactStatus
+from praxon_core.declare.miner import discover
+from praxon_core.eval.ground_truth import facts_from_rules
+from praxon_core.eval.metrics import f1_score, precision, recall
 from praxon_core.synthetic.generator import (
     BASE_ORDER,
     DEFAULT_OPTIONAL,
@@ -39,32 +39,11 @@ CONFIDENCE = 0.5
 SEED = 42
 
 
-def _facts_from_rules(rules: frozenset[Rule], tenant_id: str) -> list[Fact]:
-    """Luật khám phá thành fact `active` để đối chiếu bằng bốn chỉ số.
-
-    Với cả hai mẫu, `activation`/`target` là hai hoạt động theo thứ tự
-    trong khóa canonical (`response(x, y)`: x kích hoạt; `precedence(x, y)`:
-    x phải đứng trước y) — đúng ngữ nghĩa `_holds` của eval.
-    """
-    return [
-        Fact(
-            canonical_key=rule.canonical_key,
-            template=rule.template,
-            activation=rule.first,
-            target=rule.second,
-            status=FactStatus.ACTIVE,
-            scope=FactScope.TENANT,
-            tenant_id=tenant_id,
-        )
-        for rule in rules
-    ]
-
-
 def _measure_f1(*, tenant_id: str, params: GeneratorParams) -> tuple[float, float, float]:
     """Khám phá trên log do bộ sinh tạo, trả (precision, recall, F1)."""
     log = generate(tenant_id=tenant_id, params=params)
     rules = discover(log.traces, support=SUPPORT, confidence=CONFIDENCE)
-    facts = _facts_from_rules(rules, tenant_id)
+    facts = facts_from_rules(rules, tenant_id)
     precision_value = precision(facts, log.ground_truth)
     recall_value = recall(facts, log.ground_truth)
     return precision_value, recall_value, f1_score(precision_value, recall_value)
