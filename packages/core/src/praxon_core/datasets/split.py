@@ -3,6 +3,10 @@
 Mỗi đô thị chia theo thời điểm bắt đầu case: 60% học, 20% hiệu chỉnh,
 20% đo (spec dòng 152). Chia ngẫu nhiên thì tương lai lọt vào tập học.
 `data_hash` băm tệp log, tham số chia, danh sách tenant (spec dòng 191).
+Quy tắc gộp: `data_hash` của một lần chạy băm TẤT CẢ đầu vào dữ liệu áp
+dụng cho lần chạy đó — nửa BPIC ở đây (tệp log + tham số chia + tenant)
+và nửa bộ sinh bán tổng hợp (seed + tham số, plan 5.4); coordinator
+(10.1) gộp hai nửa khi chạy (băm nối tiếp theo thứ tự cố định).
 
 Lệnh: `python -m praxon_core.datasets.split` in số case mỗi phần +
 `data_hash` cho cả năm đô thị từ cache; `--dataset m1` chỉ chia một đô thị.
@@ -162,6 +166,16 @@ def compute_data_hash(
     Đầu vào chuẩn hóa thành JSON (băm log sắp xếp, tỉ lệ dạng repr, tenant
     sắp xếp, khóa sắp xếp) rồi băm SHA-256 — cùng đầu vào ra cùng băm, đổi
     một tham số (tệp log, tỉ lệ chia, danh sách tenant) thì băm đổi.
+
+    Quy tắc gộp (spec: `data_hash` băm cả tệp log, tham số chia, tenant,
+    và seed cùng tham số bộ sinh bán tổng hợp; plan 5.4 định nghĩa nửa
+    bộ sinh): `data_hash` của một lần chạy là băm của TẤT CẢ đầu vào dữ
+    liệu áp dụng cho lần chạy đó. Hàm này băm nửa BPIC (tệp log + tham số
+    chia + tenant); coordinator (10.1) gộp với nửa bộ sinh khi lần chạy
+    dùng cả hai nguồn — băm nối tiếp hai nửa theo thứ tự cố định (nửa
+    BPIC trước, nửa bộ sinh sau), phần nào không áp dụng thì bỏ qua.
+    Bảng `run` chỉ có một cột `data_hash`, nên một lần chạy bao cả hai
+    nguồn vẫn chỉ ghi một băm đã gộp.
     """
     payload = {
         "log_hashes": sorted(log_hashes),
