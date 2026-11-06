@@ -39,6 +39,7 @@ này nằm trong khoảng đo được):
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 from dataclasses import dataclass
 
@@ -193,6 +194,40 @@ def _generate_trace(rng: random.Random, params: GeneratorParams) -> Trace:
         position = rng.randrange(len(events))
         events.insert(position + 1, events[position])
     return Trace(tuple(events))
+
+
+def compute_data_hash(*, tenant_id: str, params: GeneratorParams) -> str:
+    """`data_hash` nửa bộ sinh: băm seed + tham số bộ sinh + tenant (spec dòng 191).
+
+    Đầu vào chuẩn hóa thành JSON (tỉ lệ dạng repr, tập tùy chọn sắp xếp,
+    khóa sắp xếp) rồi băm SHA-256 — cùng đầu vào ra cùng băm, đổi một
+    tham số (seed, số case, thứ tự, bước tùy chọn, tỉ lệ bỏ/dở dang/nhiễu,
+    tenant) thì băm đổi. Tenant nằm trong băm vì log sinh ra phụ thuộc
+    vào tenant (dòng ngẫu nhiên gieo từ seed + tenant, xem `_derive_seed`)
+    — hai tenant cùng tham số vẫn ra log khác nhau.
+
+    Quy tắc gộp (F-10; như `datasets/split.py` đã ghi cho nửa BPIC):
+    `data_hash` của một lần chạy là băm của TẤT CẢ đầu vào dữ liệu áp
+    dụng cho lần chạy đó. Hàm này băm nửa bộ sinh (seed + tham số +
+    tenant); coordinator (10.1) gộp với nửa BPIC (tệp log + tham số
+    chia + danh sách tenant, plan 3.3) khi lần chạy dùng cả hai nguồn —
+    băm nối tiếp hai nửa theo thứ tự cố định (nửa BPIC trước, nửa bộ
+    sinh sau), phần nào không áp dụng thì bỏ qua. Bảng `run` chỉ có một
+    cột `data_hash`, nên một lần chạy bao cả hai nguồn vẫn chỉ ghi một
+    băm đã gộp.
+    """
+    payload = {
+        "tenant_id": tenant_id,
+        "seed": params.seed,
+        "n_cases": params.n_cases,
+        "order": list(params.order),
+        "optional": sorted(params.optional),
+        "skip_rate": repr(params.skip_rate),
+        "incomplete_rate": repr(params.incomplete_rate),
+        "noise_level": repr(params.noise_level),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def generate(*, tenant_id: str, params: GeneratorParams) -> GeneratedLog:
