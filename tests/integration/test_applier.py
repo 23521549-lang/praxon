@@ -173,16 +173,26 @@ def test_promoter_tu_choi_candidate_nham_tenant(pg: None) -> None:
         promote_candidate(candidate, candidate_id=candidate_id)
 
 
-def test_promoter_bi_chan_boi_v4_trigger_vi_rls(pg: None) -> None:
-    """Hạn chế đã biết của lược đồ plan 2 (KHÔNG phải lỗi code ở đây).
+def test_promoter_ghi_fact_global_tu_candidate_da_duyet(pg: None) -> None:
+    """Promoter áp candidate đã duyệt lên global (V6 mở đường đọc candidate).
 
-    V3 RLS ẩn candidate của tenant khỏi vai promoter nên trigger V4 (chạy với
-    quyền promoter) không thấy candidate để kiểm status → RaiseException
-    'candidate ... không tồn tại'. Promoter chưa áp được candidate lên global;
-    cần migration V6 (đề xuất riêng, chờ duyệt). Test này ghi lại hành vi hiện
-    tại để không ai tưởng promoter đã chạy được.
+    V6 cho vai `promoter` đọc bảng `candidate` nên trigger V4 (chạy với quyền
+    promoter) thấy được candidate để kiểm status. Trước V6, hành vi bị chặn
+    được ghi lại ở `test_promoter_bi_chan_boi_v4_trigger_vi_rls` (đã xóa).
     """
     key = _unique_key("applier")
     candidate_id, candidate = _make_approved("acme", "global", _payload(key))
-    with as_role("promoter") as conn, pytest.raises(RaiseException):
-        insert_fact(conn, promote_candidate(candidate, candidate_id=candidate_id))
+    with as_role("promoter") as conn:
+        assert insert_fact(conn, promote_candidate(candidate, candidate_id=candidate_id))
+    row = _fact_row(candidate_id)
+    assert row[:8] == (
+        "global",
+        "global",
+        key,
+        "response",
+        "a response b",
+        "trial",
+        0,
+        0.0,
+    )
+    assert str(row[8]) == candidate_id
