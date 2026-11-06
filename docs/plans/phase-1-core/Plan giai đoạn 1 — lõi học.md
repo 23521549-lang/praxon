@@ -106,9 +106,9 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
-| 3.1 | Bộ tải log BPIC 2015 từ nguồn gốc, kiểm băm, không đóng gói vào kho | Lệnh tải xong, băm khớp giá trị đã ghi; bước CI chặn dữ liệu vẫn mã thoát 0 | chưa làm | chưa review |
-| 3.2 | Bảng hồ sơ: số case, số sự kiện, số loại hoạt động, phân phối theo thời gian, danh sách thuộc tính phân loại có mặt | Lệnh in bảng; số case khớp 1.199 / 832 / 1.409 / 1.053 / 1.156 — đối chiếu bài báo số 1 của BPIC 2015 | chưa làm | chưa review |
-| 3.3 | Chia theo thời điểm bắt đầu case 60/20/20; `data_hash` băm tệp log, tham số chia, danh sách tenant | Test: không case nào nằm ở hai phần; mọi case ở phần học bắt đầu trước mọi case ở phần đo; đổi tham số chia thì `data_hash` đổi | chưa làm | chưa review |
+| 3.1 | Bộ tải log BPIC 2015 từ nguồn gốc, kiểm băm, không đóng gói vào kho | Lệnh tải xong, băm khớp giá trị đã ghi; bước CI chặn dữ liệu vẫn mã thoát 0 | xong | chưa review |
+| 3.2 | Bảng hồ sơ: số case, số sự kiện, số loại hoạt động, phân phối theo thời gian, danh sách thuộc tính phân loại có mặt | Lệnh in bảng; số case khớp 1.199 / 832 / 1.409 / 1.053 / 1.156 — đối chiếu bài báo số 1 của BPIC 2015 | xong | chưa review |
+| 3.3 | Chia theo thời điểm bắt đầu case 60/20/20; `data_hash` băm tệp log, tham số chia, danh sách tenant | Test: không case nào nằm ở hai phần; mọi case ở phần học bắt đầu trước mọi case ở phần đo; đổi tham số chia thì `data_hash` đổi | đang làm | chưa review |
 | 3.4 | Báo cáo mức khác biệt giữa năm đô thị và số hoạt động còn lại sau lọc | Báo cáo sinh bằng lệnh, có số; nếu log hỏng hoặc thiếu trường thì dừng và quay về spec | chưa làm | chưa review |
 
 **Luồng song song, hạn tuần 1:** chủ dự án đọc điều khoản Kaggle trước khi dùng tài khoản thứ hai.
@@ -128,9 +128,9 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 4.1 | Bản quyết định kiến trúc ghi nguồn của từng mẫu Declare | Tệp tồn tại ở `docs/decisions/`, mỗi mẫu trỏ một định nghĩa trong bài báo | chưa làm | chưa review |
 | 4.2 | Chỉ mục vị trí đầu và cuối của mỗi hoạt động trong mỗi trace | Unit test ngữ nghĩa: `Response(a,b)` đúng khi b sau lần a cuối; `Precedence(a,b)` đúng khi a đầu trước b đầu | chưa làm | chưa review |
-| 4.3 | Lọc trước theo `support × confidence` | Test: tập luật sau lọc trùng tập luật khi không lọc, trên một lát nhỏ | chưa làm | chưa review |
-| 4.4 | Test hiệu năng trong CI | `pytest tests/perf` dưới 30 giây trên log giả cỡ đô thị 1, không lọc trước | chưa làm | chưa review |
-| 4.5 | Môi trường đối chiếu pm4py, ngoài kho, không vào phụ thuộc `core` | Script đối chiếu cho kết quả trùng khớp; `pip-licenses` của `core` vẫn mã thoát 0 | chưa làm | chưa review |
+| 4.3 | Lọc trước theo `support × confidence` | Test: tập luật sau lọc trùng tập luật khi không lọc, trên một lát nhỏ | xong | chưa review |
+| 4.4 | Test hiệu năng trong CI | `pytest tests/perf` dưới 30 giây trên log giả cỡ đô thị 1, không lọc trước | xong | chưa review |
+| 4.5 | Môi trường đối chiếu pm4py, ngoài kho, không vào phụ thuộc `core` | Script đối chiếu cho kết quả trùng khớp; `pip-licenses` của `core` vẫn mã thoát 0 | xong | chưa review |
 
 **Review plan con 4** — ngày: · người review: · kết luận:
 
@@ -165,7 +165,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 6.1 | Giao diện `LanguageModel` cộng hai backend: mô hình nhỏ trên CPU, endpoint tương thích OpenAI | Cùng bộ test hợp đồng xanh cho cả hai backend; `lint-imports` xác nhận SDK chỉ nằm trong `adapters` | chưa làm | chưa review |
 | 6.2 | Giải mã có ràng buộc theo JSON schema Declare; schema chỉ cho các mẫu trong từ vựng | Test: đầu ra luôn đúng lược đồ; mô hình không thể sinh luật thời hạn | chưa làm | chưa review |
-| 6.3 | Bộ nhớ đệm phản hồi, khóa gồm băm prompt, `model_revision`, tham số giải mã, băm JSON schema | Test: đổi schema thì đệm không trả kết quả cũ; cùng đầu vào thì không gọi mô hình lần hai | chưa làm | chưa review |
+| 6.3 | Bộ nhớ đệm phản hồi, khóa gồm băm prompt, `model_revision`, tham số giải mã, băm JSON schema | Test: đổi schema thì đệm không trả kết quả cũ; cùng đầu vào thì không gọi mô hình lần hai | xong | chưa review |
 | 6.4 | Reflector theo lô, có trần số insight mỗi lô, hai đường vào là trace và tài liệu | Test: vượt trần thì cắt, không tràn; lỗi gọi mô hình thì thử lại có giãn cách rồi đánh dấu cả lô thất bại, không nuốt lỗi | chưa làm | chưa review |
 | 6.5 | Bài đo F1 trên bộ 104 câu, tải lúc đo | Lệnh in F1 theo từng mẫu Declare; bước CI chặn dữ liệu vẫn mã thoát 0 | chưa làm | chưa review |
 
@@ -182,13 +182,13 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
-| 7.1 | Generator phát lại trace từ `episode`, không gọi mô hình | Test: không lệnh gọi mô hình nào phát sinh; `Trajectory` là kiểu có khai báo, mypy strict pass | chưa làm | chưa review |
-| 7.2 | Curator sinh `Delta` bốn loại `ADD`, `CONFIRM`, `CONTRADICT`, `RETIRE`; bảng cặp mẫu đối nghịch | Test: so khớp chính xác trên `canonical_key`; mâu thuẫn trực tiếp bị nhận ra; không gọi mô hình | chưa làm | chưa review |
+| 7.1 | Generator phát lại trace từ `episode`, không gọi mô hình | Test: không lệnh gọi mô hình nào phát sinh; `Trajectory` là kiểu có khai báo, mypy strict pass | xong | chưa review |
+| 7.2 | Curator sinh `Delta` bốn loại `ADD`, `CONFIRM`, `CONTRADICT`, `RETIRE`; bảng cặp mẫu đối nghịch | Test: so khớp chính xác trên `canonical_key`; mâu thuẫn trực tiếp bị nhận ra; không gọi mô hình | xong | chưa review |
 | 7.3 | Governor: bảng nạp bằng Pydantic, chín luật theo thứ tự, luật đầu khớp thì thắng, không luật nào khớp thì cần người duyệt | Test: không có `eval`; điều kiện chỉ lấy từ danh sách đại lượng cho trước; chạy lại ra đúng quyết định cũ | chưa làm | chưa review |
 | 7.4 | Cổng Beta và cận dưới Wilson; ghi `rule_id` và `metrics_at_decision` vào `candidate` | Unit test trên số đếm biết trước cho từng luật 2, 3, 4, 7 | chưa làm | chưa review |
 | 7.5 | Bất biến tiên nghiệm, kiểm theo từng luật lúc nạp gói | Unit test: gói có luật độ tin 1,0 với độ mạnh 8 **bị từ chối**; độ mạnh mặc định 4 được nhận | chưa làm | chưa review |
-| 7.6 | Applier và Promoter, chỉ áp candidate đã có quyết định, lũy đẳng | Test: ghi qua vai khác bị cơ sở dữ liệu chặn; áp lại cùng candidate không làm gì | chưa làm | chưa review |
-| 7.7 | Bảng `event` ghi mỗi lần gọi vai và mỗi quyết định của Governor | Test: `event` từ chối UPDATE và DELETE; mỗi hàng có `run_id`, `tenant_id`, `actor`, `decision`, `decided_by` | chưa làm | chưa review |
+| 7.6 | Applier và Promoter, chỉ áp candidate đã có quyết định, lũy đẳng | Test: ghi qua vai khác bị cơ sở dữ liệu chặn; áp lại cùng candidate không làm gì | xong | chưa review |
+| 7.7 | Bảng `event` ghi mỗi lần gọi vai và mỗi quyết định của Governor | Test: `event` từ chối UPDATE và DELETE; mỗi hàng có `run_id`, `tenant_id`, `actor`, `decision`, `decided_by` | xong | chưa review |
 
 **Review plan con 7** — ngày: · người review: · kết luận:
 
@@ -205,8 +205,8 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
 | 8.1 | Ground truth: bộ chuẩn lấy đáp án từ bộ sinh; BPIC 2015 lấy từ khám phá trên phần đo với ngưỡng cố định dùng chung cho cả bảy điều kiện | Test: không điều kiện nào được chấm bằng đáp án sinh từ chính nó; đổi điều kiện không đổi đáp án | chưa làm | chưa review |
-| 8.2 | Bốn chỉ số: precision, recall, tỉ lệ vi phạm, negative transfer | Test trên tenant giả có đáp án biết trước; mỗi chỉ số có một ca ra khác 0 | chưa làm | chưa review |
-| 8.3 | Khoảng tin cậy 95% bằng bootstrap trên case | Test: cùng seed ra cùng khoảng; số lần rút nằm trong cấu hình, không hard-code | chưa làm | chưa review |
+| 8.2 | Bốn chỉ số: precision, recall, tỉ lệ vi phạm, negative transfer | Test trên tenant giả có đáp án biết trước; mỗi chỉ số có một ca ra khác 0 | xong | chưa review |
+| 8.3 | Khoảng tin cậy 95% bằng bootstrap trên case | Test: cùng seed ra cùng khoảng; số lần rút nằm trong cấu hình, không hard-code | xong | chưa review |
 | 8.4 | Đường cong khởi động lạnh ở 0, 5, 10, 20, 40 trace | Lệnh in đường cong; điểm 0 có nhãn ghi rõ đo trên luật `trial` chế độ giám sát | chưa làm | chưa review |
 | 8.5 | Báo cáo baseline chỉ-Declare và cách ly | Báo cáo sinh bằng lệnh, bốn chỉ số theo tenant kèm khoảng tin cậy | chưa làm | chưa review |
 
@@ -229,8 +229,8 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 9.1 | Trích luật thứ tự từ Wabo vào `global`, kế thừa `valid_during` của văn bản | Lệnh in số luật trích được và số bị cổng Beta loại; test: fact từ Wabo mang khoảng hiệu lực của Wabo | chưa làm | chưa review |
 | 9.2 | Gắn khái niệm tiếng Hà Lan với tên hoạt động trong log, là một bước có kiểm | Test: bảng gắn nạp được, gắn sai thì luật bị cổng loại chứ không áp sai | chưa làm | chưa review |
-| 9.3 | Quyết định của người dùng thành `Candidate` kèm `decided_by` và `rubric_clause` | Test: không có đường ghi tắt nào vòng qua `Candidate`; thiếu `rubric_clause` thì từ chối | chưa làm | chưa review |
-| 9.4 | Rubric duyệt viết trước, khóa bằng commit; duyệt chéo mù một phần năm quyết định thủ công | Rubric có mã commit trước quyết định thủ công đầu tiên; lệnh tính kappa, ngưỡng ≥ 0,61 | chưa làm | chưa review |
+| 9.3 | Quyết định của người dùng thành `Candidate` kèm `decided_by` và `rubric_clause` | Test: không có đường ghi tắt nào vòng qua `Candidate`; thiếu `rubric_clause` thì từ chối | xong | chưa review |
+| 9.4 | Rubric duyệt viết trước, khóa bằng commit; duyệt chéo mù một phần năm quyết định thủ công | Rubric có mã commit trước quyết định thủ công đầu tiên; lệnh tính kappa, ngưỡng ≥ 0,61 | chưa xong (xong lệnh kappa, thiếu rubric) | chưa review |
 | 9.5 | Kiểm điều kiện thuộc tính phân loại trên loại matching của BPIC 2019 | Lệnh in số case trong phần thỏa điều kiện; dưới 30 case thì loại theo luật 7 | chưa làm | chưa review |
 | 9.6 | Hiệu chỉnh 0,7; 0,95; 0,05; độ mạnh tiên nghiệm; phần tối thiểu 30 case — chỉ trên phần hiệu chỉnh | Test: bộ điều phối từ chối hiệu chỉnh trên phần đo; độ mạnh tiên nghiệm thử ít nhất ba giá trị, tất cả trong vùng bất biến cho phép | chưa làm | chưa review |
 | 9.7 | Biên bản kiểm cầu dao 50% | Văn bản ở `docs/plans/phase-1-core/`: đã xong bao nhiêu phần việc cốt lõi, cắt gì nếu chưa đạt | chưa làm | chưa review |
