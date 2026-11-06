@@ -8,6 +8,7 @@ from praxon_core.eval.metrics import (
     FactScope,
     Metrics,
     compute_metrics,
+    f1_score,
     negative_transfer,
     precision,
     recall,
@@ -187,3 +188,11 @@ def test_mau_khong_ho_tro_thi_bao_loi():
     facts = [_fact("response(a, b)", "succession", "a", "b", FactScope.TENANT, TENANT)]
     with pytest.raises(ValueError):
         violation_rate(facts, _muoi_trace())
+
+
+def test_f1_la_trung_binh_dieu_hoa_cua_precision_va_recall():
+    assert f1_score(1.0, 1.0) == 1.0
+    assert f1_score(1.0, 0.0) == 0.0
+    assert f1_score(0.0, 0.0) == 0.0
+    assert abs(f1_score(1.0, 20 / 56) - 0.5263157894736842) < 1e-12
+    assert abs(f1_score(0.5, 0.5) - 0.5) < 1e-12

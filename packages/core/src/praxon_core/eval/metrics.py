@@ -132,6 +132,19 @@ def recall(facts: Sequence[Fact], reference: set[str] | frozenset[str]) -> float
     return found / len(reference)
 
 
+def f1_score(precision_value: float, recall_value: float) -> float:
+    """Trung bình điều hòa của precision và recall (chỉ số F1).
+
+    Dùng cho nghiệm thu bộ chuẩn 5.3: khám phá trên log do bộ sinh tạo ra
+    đối chiếu với đáp án tuyệt đối của nó. Cả hai đều 0 thì không có bằng
+    chứng đúng nào nên F1 là 0.
+    """
+    total = precision_value + recall_value
+    if total == 0.0:
+        return 0.0
+    return 2 * precision_value * recall_value / total
+
+
 def violation_rate(facts: Sequence[Fact], traces: Sequence[Trace]) -> float:
     """Phần fact `active` bị quá 10% trace đo vi phạm. Không có fact `active` thì 0."""
     active = _active_facts(facts)
