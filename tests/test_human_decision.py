@@ -12,12 +12,18 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from praxon_core.learning.human_decision import human_decision_to_candidate
 
 
 def _payload() -> dict[str, Any]:
-    return {"canonical_key": "k", "template": "t", "statement": "s"}
+    return {
+        "canonical_key": "response(A, B)",
+        "template": "response",
+        "statement": "A response B",
+        "valid_start": "2030-01-01T00:00:00+00:00",
+    }
 
 
 def test_quyet_dinh_thanh_candidate_co_decided_by_va_rubric_clause():
@@ -82,6 +88,37 @@ def test_target_scope_la_bi_tu_choi():
         human_decision_to_candidate(
             target_scope="acme",
             payload=_payload(),
+            rationale="người dùng duyệt",
+            decided_by="nguoi-duyet",
+            rubric_clause="rubric 3.2",
+        )
+
+
+def test_payload_sai_bi_tu_choi_ngay_luc_tao():
+    """Payload không khớp FactPayload thì lỗi ngay lúc tạo (fail-fast, F).
+
+    Trước đây hàm này chuyền payload do caller cung cấp mà không kiểm, nên
+    lỗi chỉ lộ ở lúc áp. Nay validate theo FactPayload trước khi tạo
+    Candidate: thiếu `valid_start` thì từ chối ngay.
+    """
+    with pytest.raises(ValidationError):
+        human_decision_to_candidate(
+            target_scope="tenant",
+            payload={"canonical_key": "k", "template": "t", "statement": "s"},
+            rationale="người dùng duyệt",
+            decided_by="nguoi-duyet",
+            rubric_clause="rubric 3.2",
+        )
+
+
+def test_payload_khoa_la_bi_tu_choi_ngay_luc_tao():
+    """Khóa lạ trong payload vẫn bị `extra="forbid"` từ chối ngay lúc tạo."""
+    payload = _payload()
+    payload["kind2"] = "x"
+    with pytest.raises(ValidationError):
+        human_decision_to_candidate(
+            target_scope="tenant",
+            payload=payload,
             rationale="người dùng duyệt",
             decided_by="nguoi-duyet",
             rubric_clause="rubric 3.2",

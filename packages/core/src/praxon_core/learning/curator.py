@@ -23,28 +23,19 @@ ADR 4.1 chốt từ vựng đầy đủ.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
 from praxon_core.learning.candidate import Candidate, FactStatus
-
-
-def canonical_key_for(
-    template: str, activation: str, target: str, condition: str | None
-) -> str:
-    """Ghép khóa canonical từ mẫu Declare, hai hoạt động và điều kiện.
-
-    Định dạng theo ví dụ trong spec (dòng 54):
-    `precedence(Record Goods Receipt, Record Invoice Receipt)`. Có điều
-    kiện thì điều kiện là đối số thứ ba — mở rộng tự nhiên của ví dụ, do
-    spec không định dạng riêng cho điều kiện. Mọi nơi trong gói learning
-    dùng chung hàm này để khóa không lệch nhau.
-    """
-    if condition is None:
-        return f"{template}({activation}, {target})"
-    return f"{template}({activation}, {target}, {condition})"
-
+from praxon_core.learning.payload import (
+    FactPayload,
+    statement_for,
+)
+from praxon_core.learning.payload import (
+    canonical_key_for as canonical_key_for,
+)
 
 #: Bảng cặp mẫu đối nghịch (chỉ Response và Precedence, mẫu miner đang có).
 #: Mỗi mẫu ánh xạ tới phủ định của nó; quan hệ đối xứng. Nguồn: mẫu quan
@@ -215,28 +206,54 @@ def curate(insight: Insight, facts: list[FactRead]) -> list[Delta]:
     return deltas
 
 
-def to_candidate(delta: Delta) -> Candidate:
+def to_candidate(
+    delta: Delta, *, valid_start: datetime, valid_end: datetime | None = None
+) -> Candidate:
     """Một Delta thành Candidate cho Governor (spec dòng 77).
 
-    `target_scope` lấy từ phạm vi của Insight; `payload` mang đủ thông tin
-    để Applier hành động (loại delta, khóa, ràng buộc đề xuất, fact bị tác
-    động nếu có); `status` ban đầu là `pending`.
+    `target_scope` lấy từ phạm vi của Insight; `payload` là các trường fact
+    theo hợp đồng chung `FactPayload` (mô hình `learning/payload.py`) để
+    Applier đọc đúng các trường này khi ghi fact. `status` ban đầu là
+    `pending`. `support`/`confidence` để mặc định 0/0.0 — Curator chưa có
+    số liệu này (Insight không mang support/confidence); khi có số liệu
+    (từ Measures/beta) thì bổ sung sau.
+
+    `valid_start` (đầu khoảng hiệu lực `valid_during`) do coordinator
+    truyền vào — hàm thuần không tự lấy giờ. TRACE: thời điểm Governor
+    duyệt / coordinator áp. DOCUMENT: ở lát cắt này dùng thời điểm duyệt
+    cho cả hai nguồn (Insight chưa mang khoảng hiệu lực văn bản và đường
+    tài liệu chưa triển khai); khi đường tài liệu có metadata văn bản thì
+    coordinator truyền khoảng hiệu lực văn bản theo spec dòng 56.
+
+    `canonical_key` lấy từ Insight (khóa của ràng buộc MỚI), không phải
+    từ Delta (khóa fact cũ) — với CONTRADICT/RETIRE, khóa fact cũ lệch
+    với mẫu đối nghịch (vd `response(A, B)` vs `not_response`), validator
+    nhất quán của `FactPayload` sẽ từ chối payload lệch ngay lúc tạo.
+
+    `kind` + `fact_id` được giữ trong payload (không phải trường fact):
+    Applier cần chúng để quyết hành động khi áp RETIRE/CONTRADICT
+    (task P). `fact_canonical_key` + `fact_status` đã bỏ (thừa — xem
+    `learning/payload.py`).
     """
     insight = delta.insight
     fact = delta.fact
+    payload = FactPayload(
+        canonical_key=insight.canonical_key,
+        template=insight.template,
+        statement=statement_for(
+            insight.template, insight.activation, insight.target, insight.condition
+        ),
+        activation=insight.activation,
+        target=insight.target,
+        condition=insight.condition,
+        valid_start=valid_start,
+        valid_end=valid_end,
+        kind=delta.kind.value,
+        fact_id=fact.id if fact is not None else None,
+    )
     return Candidate(
         target_scope=insight.scope,
-        payload={
-            "kind": delta.kind.value,
-            "canonical_key": delta.canonical_key,
-            "template": insight.template,
-            "activation": insight.activation,
-            "target": insight.target,
-            "condition": insight.condition,
-            "fact_id": fact.id if fact is not None else None,
-            "fact_canonical_key": fact.canonical_key if fact is not None else None,
-            "fact_status": fact.status.value if fact is not None else None,
-        },
+        payload=payload.model_dump(mode="json"),
         rationale=delta.rationale,
         evidence_episode_ids=list(insight.evidence_episode_ids),
         status="pending",

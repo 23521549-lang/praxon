@@ -17,37 +17,11 @@ trigger V4 chặn ở tầng DB khi ghi qua vai sai.
 
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from praxon_core.learning.candidate import Candidate, FactStatus
+from praxon_core.learning.candidate import Candidate
+from praxon_core.learning.payload import FactPayload
 from praxon_core.repositories.facts import FactRow
-
-
-class FactPayload(BaseModel):
-    """Nội dung fact trong `payload` của candidate (Curator ghi, Applier đọc).
-
-    Khóa này là hợp đồng giữa Curator (7.2) và Applier: Curator đặt các trường
-    fact vào payload của candidate; Applier đọc đúng các trường này để ghi fact.
-    `extra="forbid"` để một khóa lạ bị từ chối ngay. `source_episode_ids` của
-    fact lấy từ `evidence_episode_ids` của candidate, không nằm trong payload.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    canonical_key: str
-    template: str
-    statement: str
-    status: FactStatus = FactStatus.TRIAL
-    activation: str | None = None
-    target: str | None = None
-    condition: str | None = None
-    support: int = Field(default=0, ge=0)
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    valid_start: datetime
-    valid_end: datetime | None = None
 
 
 def build_fact_row(candidate: Candidate, *, candidate_id: str, tenant_id: str) -> FactRow:

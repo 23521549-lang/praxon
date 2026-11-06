@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
 
 from praxon_core.learning.candidate import FactStatus
@@ -16,6 +17,9 @@ from praxon_core.learning.curator import (
     opposite_template,
     to_candidate,
 )
+
+#: Thời điểm hiệu lực cố định cho test (xác định — không dùng giờ thật).
+VALID_START = datetime(2030, 1, 1, tzinfo=UTC)
 
 
 def _insight(
@@ -165,13 +169,17 @@ def test_dieu_kien_khac_nhau_la_khoa_khac_nhau():
 
 
 def test_to_candidate_add_mang_du_thong_tin():
-    candidate = to_candidate(curate(_insight(), [])[0])
+    candidate = to_candidate(curate(_insight(), [])[0], valid_start=VALID_START)
     assert candidate.target_scope == "acme"
     assert candidate.status == "pending"
     assert candidate.payload["kind"] == "add"
     assert candidate.payload["canonical_key"] == "response(A, B)"
     assert candidate.payload["template"] == "response"
+    assert candidate.payload["statement"] == "A response B"
+    assert candidate.payload["valid_start"] == "2030-01-01T00:00:00Z"
     assert candidate.payload["fact_id"] is None
+    assert "fact_canonical_key" not in candidate.payload
+    assert "fact_status" not in candidate.payload
     assert candidate.evidence_episode_ids == ["e1", "e2"]
     assert candidate.rule_id is None
     assert candidate.decided_by is None
@@ -179,11 +187,18 @@ def test_to_candidate_add_mang_du_thong_tin():
 
 def test_to_candidate_contradict_mang_fact_bi_tac_dong():
     fact = _fact("response(A, B)", FactStatus.ACTIVE)
-    candidate = to_candidate(curate(_insight(template="not_response"), [fact])[0])
+    candidate = to_candidate(
+        curate(_insight(template="not_response"), [fact])[0], valid_start=VALID_START
+    )
     assert candidate.payload["kind"] == "contradict"
     assert candidate.payload["fact_id"] == "f1"
-    assert candidate.payload["fact_canonical_key"] == "response(A, B)"
-    assert candidate.payload["fact_status"] == "active"
+    # Khóa là khóa của ràng buộc MỚI (đối nghịch), không phải khóa fact cũ —
+    # sửa lỗi §2 (khóa/mẫu lệch ở CONTRADICT/RETIRE).
+    assert candidate.payload["canonical_key"] == "not_response(A, B)"
+    assert candidate.payload["template"] == "not_response"
+    assert candidate.payload["statement"] == "A not_response B"
+    assert "fact_canonical_key" not in candidate.payload
+    assert "fact_status" not in candidate.payload
 
 
 def test_khong_import_bat_cu_module_mo_hinh_nao():
