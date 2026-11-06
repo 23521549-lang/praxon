@@ -63,6 +63,37 @@ DEFAULT_OPTIONAL: frozenset[str] = frozenset({"step_03", "step_05", "step_07"})
 """Ba bước tùy chọn mặc định (3/8 bước, cùng bậc với tỉ lệ bước tùy chọn
 trong log thật: 83-117 trên 356-410 loại hoạt động là tùy chọn)."""
 
+# --- Khoảng đo được từ log thật BPIC 2015 (task 5.2) ---
+# Đo ngày 7/11/2026 bằng parser XES của plan 3 (`datasets/xes.py`) trên cả
+# 5 đô thị (tổng 5.649 case, 264.628 sự kiện). Mỗi khoảng là [nhỏ nhất,
+# lớn nhất] theo đô thị. Định nghĩa đo (chốt trước khi đo, xem ghi chú
+# từng hằng):
+MEASURED_CASE_COUNT_RANGE: tuple[int, int] = (832, 1_409)
+"""Khoảng số case theo đô thị (M2 832; M3 1.409). Tổng 5.649 case."""
+
+MEASURED_SKIP_RATE_RANGE: tuple[float, float] = (0.042, 0.900)
+"""Khoảng tỉ lệ bỏ của bước tùy chọn: với mỗi hoạt động xuất hiện ở
+10-99% số case, tỉ lệ bỏ = 1 - (số case chứa hoạt động / tổng số case).
+Nhỏ nhất 0,042 (M3), lớn nhất 0,900 (M5); trung vị theo đô thị 0,602-0,671.
+"""
+
+MEASURED_INCOMPLETE_RATE_RANGE: tuple[float, float] = (0.062, 0.203)
+"""Khoảng tỉ lệ case dở dang: số trace không có thuộc tính `endDate` /
+tổng số case (đo từ `Trace.attributes`). Nhỏ nhất 0,062 (M5), lớn nhất
+0,203 (M1); gộp 5 đô thị 664/5.649 ≈ 0,118. Đối chiếu: `caseStatus` = 'O'
+(mở) cho 0,057-0,452 — khoảng rộng hơn và ý nghĩa 'O'/'G' không có trong
+log nên không dùng làm định nghĩa chính.
+"""
+
+MEASURED_NOISE_RATE_RANGE: tuple[float, float] = (0.295, 0.418)
+"""Khoảng mức nhiễu: tỉ lệ trace có một hoạt động lặp lại (>= 2 lần).
+Nhỏ nhất 0,295 (M4), lớn nhất 0,418 (M5); gộp 5 đô thị 1.965/5.649
+≈ 0,348. Định nghĩa này khớp cơ chế nhiễu của bộ sinh (nhân đôi một sự
+kiện tạo hoạt động lặp lại). Định nghĩa thay thế đã loại: tỉ lệ event có
+`lifecycle:transition` = "incomplete"/"withdraw" — đo được 0,0000 ở cả 5
+đô thị (mọi event đều "complete") nên không có tín hiệu, không dùng được.
+"""
+
 
 @dataclass(frozen=True)
 class GeneratorParams:
