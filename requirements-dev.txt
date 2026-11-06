@@ -13,3 +13,6 @@ psycopg-binary==3.3.6
 # cần gói stub này để kiểm kiểu cho lệnh validate ở phía host. Chỉ dùng lúc
 # kiểm kiểu, không vào cây phụ thuộc runtime của core.
 types-jsonschema==4.26.0.20261006
+# Đọc XLSX cho lệnh đo F1 (task 6.5): chỉ dùng lúc đo, không vào cây phụ
+# thuộc runtime của core (MIT). Đọc bộ 104 câu trong tools/, không trong core.
+openpyxl==3.1.5
