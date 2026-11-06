@@ -206,7 +206,7 @@ Mọi mục dưới đây đều có một cách kiểm tự động đi kèm.
 | Cấu hình | Một đối tượng settings có kiểu, nạp từ một tệp | Bước CI tìm os.environ và getenv ngoài module settings; import-linter không chặn được thuộc tính nên không dùng nó cho việc này |
 | Định dạng và lint | ruff, ruff format | CI gate |
 | Gói luật | Tiên nghiệm một mình không đưa luật nào lên chính thức, kiểm theo độ tin của từng luật | Validator Pydantic từ chối nạp gói; unit test: gói có luật độ tin 1,0 với độ mạnh 8 phải bị từ chối |
-| Dữ liệu bên thứ ba | Log BPIC và bộ 104 câu tải lúc chạy, không nằm trong kho | Bước CI chặn tệp .xes, .csv và .gz trong kho ngoài thư mục fixture của test |
+| Dữ liệu bên thứ ba | Log BPIC và bộ 104 câu tải lúc chạy, không nằm trong kho | Bước CI chặn tệp .xes, .csv, .gz và .xlsx trong kho ngoài thư mục fixture của test |
 | Hiệu năng khám phá | Lọc trước theo support × confidence, chỉ mục vị trí đầu và cuối | Test CI: log giả cỡ đô thị 1, không lọc trước, dưới 30 giây trên CPU; cùng tập luật với bản duyệt thẳng trên lát nhỏ |
 | Phần đo khóa | Cấu hình khóa bằng commit trước khi chạm phần đo | Test tích hợp: bộ điều phối từ chối run trên phần đo khi config\_hash khác bản đã khóa |
 | Cổng tool | Mọi tool call đi qua ToolGateway; quyết định của người dùng chỉ vào qua Candidate | import-linter cấm client MCP và SDK agent ngoài thư mục gateway và adapter; test hợp đồng với cổng giả; test bảng event từ chối UPDATE và DELETE |
