@@ -1,0 +1,509 @@
+"""Test Reflector theo lô (task 6.4).
+
+Cổng ra: (a) vượt trần thì cắt, không tràn; (b) lỗi gọi mô hình thì thử
+lại có giãn cách rồi đánh dấu cả lô thất bại, không nuốt lỗi. Không gọi
+model thật: server giả tương thích OpenAI (httpx2.MockTransport) như test
+hợp đồng 6.1/6.2 — riêng ca đầu ra sai lược đồ dùng model giả trả text
+ghi sẵn (không qua adapter) để tới được đường parse của Reflector.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
+
+import httpx2
+import openai
+import pytest
+
+from praxon_core.adapters.language_model import (
+    CompletionResult,
+    ModelCallError,
+    OpenAICompatibleModel,
+)
+from praxon_core.learning.candidate import FactStatus
+from praxon_core.learning.coordinator import (
+    LearningRound,
+    ReflectorFn,
+    ReflectorResult,
+    run_learning_round,
+)
+from praxon_core.learning.curator import FactRead, InsightSource
+from praxon_core.learning.declare_schema import (
+    DECLARE_OUTPUT_SCHEMA,
+    ReflectorOutputError,
+)
+from praxon_core.learning.generator import EpisodeRow, Trajectory
+from praxon_core.learning.measures import Measures
+from praxon_core.learning.reflector import (
+    Reflector,
+    ReflectorBatchError,
+    reflector_from_settings,
+)
+from praxon_core.learning.rules import default_rule_table
+from praxon_core.settings import Settings, load_settings
+
+CPU_BASE_URL = "http://localhost:8080/v1"
+MODEL_ID = "Qwen/Qwen3-8B-GGUF"
+
+
+def _rule(
+    template: str = "response",
+    activation: str = "A",
+    target: str = "B",
+    condition: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Một luật Declare dạng dict (đúng schema 6.2)."""
+    rule: dict[str, Any] = {
+        "template": template,
+        "activation": activation,
+        "target": target,
+    }
+    if condition is not None:
+        rule["condition"] = condition
+    return rule
+
+
+def _rules_text(*rules: dict[str, Any]) -> str:
+    """Text JSON đầu ra của mô hình: `{"rules": [...]}`."""
+    return json.dumps({"rules": list(rules)})
+
+
+def _trajectory(
+    case_id: str,
+    activities: Sequence[str],
+    tenant_id: str = "acme",
+    attributes: dict[str, Any] | None = None,
+) -> Trajectory:
+    """Một trajectory: case_id + dãy hoạt động theo thứ tự."""
+    return Trajectory(
+        tenant_id=tenant_id,
+        case_id=case_id,
+        activities=tuple(activities),
+        attributes=attributes or {},
+    )
+
+
+def _fact(canonical_key: str, scope: str = "tenant") -> FactRead:
+    """Một fact hiện hành tối thiểu (chỉ để đưa vào prompt)."""
+    return FactRead(
+        id="33333333-3333-3333-3333-333333333333",
+        scope=scope,
+        canonical_key=canonical_key,
+        template="response",
+        activation="A",
+        target="B",
+        condition=None,
+        status=FactStatus.ACTIVE,
+    )
+
+
+class _FakeServer:
+    """Server giả tương thích OpenAI: trả phản hồi ghi sẵn, ghi lại yêu cầu.
+
+    `texts` là text trả cho từng lần gọi (hết danh sách thì lặp lại text
+    cuối — dùng khi nhiều lô cùng một canned output). `fail_times` lần
+    đầu trả 500 rồi mới thành công; `fail_always` luôn trả 500 (lỗi tạm
+    thời, adapter thử lại). `usage=None` nghĩa là phản hồi không có
+    `usage` (server thật có thể không trả).
+    """
+
+    def __init__(
+        self,
+        texts: Sequence[str],
+        *,
+        prompt_tokens: int = 1,
+        completion_tokens: int = 1,
+        usage: bool = True,
+        fail_times: int = 0,
+        fail_always: bool = False,
+    ) -> None:
+        self._texts = list(texts)
+        self._prompt_tokens = prompt_tokens
+        self._completion_tokens = completion_tokens
+        self._usage = usage
+        self._fail_times = fail_times
+        self._fail_always = fail_always
+        self.calls: list[httpx2.Request] = []
+
+    def handler(self, request: httpx2.Request) -> httpx2.Response:
+        """Trả phản hồi ghi sẵn (hoặc lỗi 500) cho một yêu cầu."""
+        self.calls.append(request)
+        if self._fail_always or len(self.calls) <= self._fail_times:
+            return httpx2.Response(
+                500,
+                json={"error": {"message": "lỗi server giả", "type": "error"}},
+            )
+        index = min(len(self.calls) - 1, len(self._texts) - 1)
+        payload: dict[str, Any] = {
+            "id": "chatcmpl-gia",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": MODEL_ID,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": self._texts[index]},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        if self._usage:
+            payload["usage"] = {
+                "prompt_tokens": self._prompt_tokens,
+                "completion_tokens": self._completion_tokens,
+                "total_tokens": self._prompt_tokens + self._completion_tokens,
+            }
+        return httpx2.Response(200, json=payload)
+
+
+def _model(
+    texts: Sequence[str],
+    *,
+    max_retries: int = 3,
+    retry_base_delay_seconds: float = 0.0,
+    usage: bool = True,
+    fail_times: int = 0,
+    fail_always: bool = False,
+    prompt_tokens: int = 1,
+    completion_tokens: int = 1,
+) -> tuple[OpenAICompatibleModel, _FakeServer]:
+    """Adapter trỏ về server giả; tắt vòng thử lại của SDK."""
+    server = _FakeServer(
+        texts,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        usage=usage,
+        fail_times=fail_times,
+        fail_always=fail_always,
+    )
+    client = openai.OpenAI(
+        base_url=CPU_BASE_URL,
+        api_key="local",
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(server.handler)),
+    )
+    model = OpenAICompatibleModel(
+        client,
+        model=MODEL_ID,
+        max_retries=max_retries,
+        retry_base_delay_seconds=retry_base_delay_seconds,
+    )
+    return model, server
+
+
+def _prompt(call: httpx2.Request) -> str:
+    """Prompt (content của message user) trong một yêu cầu đã ghi."""
+    body = json.loads(call.content.decode("utf-8"))
+    return str(body["messages"][0]["content"])
+
+
+class _StubModel:
+    """LanguageModel giả trả text ghi sẵn, không gọi mạng.
+
+    Dùng cho ca adapter không chạm tới: đầu ra sai lược đồ phải tới được
+    đường parse của Reflector (adapter thật đã chặn ở phía host).
+    """
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self.prompts: list[str] = []
+
+    def complete(
+        self,
+        prompt: str,
+        *,
+        json_schema: Mapping[str, Any] | None = None,
+        temperature: float = 0.0,
+        seed: int | None = None,
+        max_tokens: int | None = None,
+    ) -> CompletionResult:
+        self.prompts.append(prompt)
+        return CompletionResult(text=self._text)
+
+
+def test_reflect_trace_tra_luat_thanh_insight():
+    """Trace thành Insight: đúng luật, đúng scope/bằng chứng/token."""
+    canned = _rules_text(_rule(), _rule(template="precedence", activation="A", target="C"))
+    model, server = _model([canned])
+    reflector = Reflector(model)
+    result = reflector.reflect(
+        [_trajectory("c1", ["A", "B"]), _trajectory("c2", ["A", "C"])],
+        [_fact("response(X, Y)")],
+    )
+    assert len(server.calls) == 1
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(A, B)",
+        "precedence(A, C)",
+    ]
+    for insight in result.insights:
+        assert insight.source is InsightSource.TRACE
+        assert insight.scope == "tenant"
+        # Bằng chứng rỗng: Trajectory không mang id episode (chỉ case_id),
+        # mà hợp đồng tầng áp đòi UUID episode — điền case_id vào sẽ vỡ
+        # build_fact_row khi candidate được duyệt tự động.
+        assert insight.evidence_episode_ids == []
+    assert (result.tokens_in, result.tokens_out) == (1, 1)
+
+
+def test_reflect_chia_lo_theo_batch_size():
+    """5 trace, batch 2 → 3 lần gọi, mỗi prompt chỉ chứa case của lô đó."""
+    canned = _rules_text(_rule())
+    model, server = _model([canned])
+    reflector = Reflector(model, batch_size=2)
+    trajectories = [_trajectory(f"c{i}", ["A", "B"]) for i in range(1, 6)]
+    result = reflector.reflect(trajectories, [])
+    assert len(server.calls) == 3
+    assert len(result.insights) == 3
+    assert "c1" in _prompt(server.calls[0]) and "c2" in _prompt(server.calls[0])
+    assert "c3" not in _prompt(server.calls[0])
+    assert "c3" in _prompt(server.calls[1]) and "c4" in _prompt(server.calls[1])
+    assert "c5" in _prompt(server.calls[2]) and "c1" not in _prompt(server.calls[2])
+
+
+def test_vuot_tran_thi_cat_khong_tran():
+    """Mô hình trả 5 luật, trần 2 → chỉ 2 luật đầu, giữ thứ tự mô hình."""
+    rules = [_rule(target=target) for target in ["B", "C", "D", "E", "F"]]
+    model, _server = _model([_rules_text(*rules)])
+    reflector = Reflector(model, max_insights_per_batch=2)
+    result = reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(A, B)",
+        "response(A, C)",
+    ]
+
+
+def test_tran_ap_dung_tung_lo():
+    """Trần tính theo từng lô: 2 lô, mỗi lô 3 luật, trần 2 → 4 insight."""
+    rules = [_rule(target=target) for target in ["B", "C", "D"]]
+    model, _server = _model([_rules_text(*rules)])
+    reflector = Reflector(model, batch_size=1, max_insights_per_batch=2)
+    trajectories = [_trajectory("c1", ["A", "B"]), _trajectory("c2", ["A", "B"])]
+    result = reflector.reflect(trajectories, [])
+    assert len(result.insights) == 4
+
+
+def test_loi_mo_hinh_thu_lai_roi_danh_dau_ca_lo_that_bai():
+    """Server luôn 500: adapter thử lại 3 lần (tổng 4 lần gọi) rồi Reflector báo lô thất bại."""
+    model, server = _model([_rules_text(_rule())], fail_always=True)
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError) as excinfo:
+        reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert len(server.calls) == 4
+    assert isinstance(excinfo.value.__cause__, ModelCallError)
+
+
+def test_thu_lai_co_gian_cach(monkeypatch):
+    """Giãn cách thử lại: độ trễ ghi được đúng cấp số nhân (0,05 → 0,1 → 0,2)."""
+    delays: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda seconds: delays.append(seconds))
+    model, server = _model(
+        [_rules_text(_rule())],
+        fail_always=True,
+        retry_base_delay_seconds=0.05,
+    )
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert len(server.calls) == 4
+    assert delays == [0.05, 0.1, 0.2]
+
+
+def test_dau_ra_sai_luoc_do_danh_dau_ca_lo_that_bai():
+    """Model trả text không phải JSON: Reflector báo cả lô thất bại, không trả luật nửa vời."""
+    model = _StubModel("đây không phải JSON")
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError) as excinfo:
+        reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert isinstance(excinfo.value.__cause__, ReflectorOutputError)
+    assert len(model.prompts) == 1
+
+
+def test_reflect_document_tra_insight_global():
+    """Tài liệu thành Insight: scope global, nguồn document, không episode bằng chứng."""
+    canned = _rules_text(_rule(template="precedence", activation="A", target="B"))
+    model, server = _model([canned])
+    reflector = Reflector(model)
+    result = reflector.reflect_document("Công bố dự thảo trước quyết định cuối.", [])
+    assert len(server.calls) == 1
+    assert len(result.insights) == 1
+    insight = result.insights[0]
+    assert insight.canonical_key == "precedence(A, B)"
+    assert insight.source is InsightSource.DOCUMENT
+    assert insight.scope == "global"
+    assert insight.evidence_episode_ids == []
+
+
+def test_tai_lieu_rong_khong_goi_mo_hinh():
+    """Tài liệu rỗng thì trả kết quả rỗng, không gọi mô hình."""
+    model, server = _model([_rules_text(_rule())])
+    reflector = Reflector(model)
+    result = reflector.reflect_document("   \n", [])
+    assert result == ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
+    assert len(server.calls) == 0
+
+
+def test_lo_rong_khong_goi_mo_hinh():
+    """Không có trajectory thì trả kết quả rỗng, không gọi mô hình."""
+    model, server = _model([_rules_text(_rule())])
+    reflector = Reflector(model)
+    result = reflector.reflect([], [])
+    assert result == ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
+    assert len(server.calls) == 0
+
+
+def test_prompt_chua_trace_va_fact_hien_hanh():
+    """Prompt chứa case của lô và khóa fact hiện hành (để mô hình khỏi đề xuất lại)."""
+    model, server = _model([_rules_text(_rule())])
+    reflector = Reflector(model)
+    reflector.reflect(
+        [_trajectory("c1", ["A", "B"], attributes={"case_type": "X"})],
+        [_fact("response(X, Y)"), _fact("precedence(P, Q)", scope="global")],
+    )
+    prompt = _prompt(server.calls[0])
+    assert "c1" in prompt and "A -> B" in prompt and "case_type=X" in prompt
+    assert "response(X, Y)" in prompt and "precedence(P, Q)" in prompt
+
+
+def test_reflector_gui_dung_schema_cho_adapter():
+    """Reflector truyền đúng DECLARE_OUTPUT_SCHEMA làm response_format."""
+    model, server = _model([_rules_text(_rule())])
+    reflector = Reflector(model)
+    reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    body = json.loads(server.calls[0].content.decode("utf-8"))
+    assert body["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response", "schema": DECLARE_OUTPUT_SCHEMA},
+    }
+
+
+def _episode(case_id: str, activity: str, occurred: str) -> EpisodeRow:
+    """Một hàng episode tối thiểu cho vòng học qua coordinator."""
+    return EpisodeRow(
+        tenant_id="acme",
+        case_id=case_id,
+        payload={"activity": activity, "case_attributes": {}},
+        occurred_at=datetime.fromisoformat(occurred),
+        ingested_at=datetime.fromisoformat("2026-11-06T00:00:00"),
+    )
+
+
+def _measures() -> Measures:
+    """Số đo giả: candidate mới từ trace, đủ mạnh để Governor quyết."""
+    return Measures(
+        has_direct_conflict=False,
+        schema_valid=True,
+        from_trace=True,
+        wilson_lower=0.8,
+        beta_prob=0.5,
+        is_scope_promotion=False,
+        from_global=False,
+        has_condition=False,
+        matching_cases=0,
+        fact_status=None,
+        is_new=True,
+        human_early_activate=False,
+        has_rubric_clause=False,
+    )
+
+
+def test_reflector_khop_reflector_fn_cua_coordinator():
+    """Reflector thật chạy được trong vòng học của coordinator (khớp ReflectorFn)."""
+    canned = _rules_text(_rule())
+    model, _server = _model([canned])
+    reflector = Reflector(model, seed=42)
+    fn: ReflectorFn = reflector.reflect
+    _ids = itertools.count()
+    outcome = run_learning_round(
+        LearningRound(
+            tenant_id="acme",
+            episode_rows=(
+                _episode("c1", "A", "2026-11-06T10:00:00"),
+                _episode("c1", "B", "2026-11-06T11:00:00"),
+            ),
+            facts=(),
+            rule_table=default_rule_table(),
+            seed=42,
+            model_id=MODEL_ID,
+            model_revision="7c41481f57cb95916b40956ab2f0b139b296d974",
+            code_commit="d" * 40,
+            config_hash="c" * 64,
+            data_hash="d" * 64,
+            valid_start=datetime(2030, 1, 1, tzinfo=UTC),
+            retired_at=datetime(2030, 2, 1, tzinfo=UTC),
+        ),
+        reflect=fn,
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=lambda: f"candidate-{next(_ids)}",
+    )
+    assert len(outcome.insights) == 1
+    assert outcome.insights[0].canonical_key == "response(A, B)"
+    assert outcome.run_row.tokens_in == 1 and outcome.run_row.tokens_out == 1
+
+
+def test_cau_hinh_mac_dinh_tran_lo(tmp_path):
+    """Trần lô mặc định 10/20, ghi đè qua TOML, và factory nối đúng Settings."""
+    settings = Settings(database_url="x")
+    assert settings.reflector_batch_size == 10
+    assert settings.reflector_max_insights_per_batch == 20
+    config = tmp_path / "config.toml"
+    config.write_text(
+        'database_url = "x"\nreflector_batch_size = 3\nreflector_max_insights_per_batch = 7\n',
+        encoding="utf-8",
+    )
+    overridden = load_settings(config)
+    assert overridden.reflector_batch_size == 3
+    assert overridden.reflector_max_insights_per_batch == 7
+    model, server = _model([_rules_text(_rule())])
+    reflector = reflector_from_settings(overridden, model)
+    trajectories = [_trajectory(f"c{i}", ["A", "B"]) for i in range(1, 8)]
+    reflector.reflect(trajectories, [])
+    assert len(server.calls) == 3
+
+
+def test_tham_so_lo_khong_hop_le_bi_tu_choi():
+    """batch_size / max_insights_per_batch < 1 thì từ chối ngay lúc dựng."""
+    model, _server = _model([_rules_text(_rule())])
+    with pytest.raises(ValueError):
+        Reflector(model, batch_size=0)
+    with pytest.raises(ValueError):
+        Reflector(model, max_insights_per_batch=0)
+
+
+def test_token_khong_co_tinh_bang_0():
+    """Server không trả usage thì token tính bằng 0 (không None)."""
+    model, _server = _model([_rules_text(_rule())], usage=False)
+    reflector = Reflector(model)
+    result = reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert (result.tokens_in, result.tokens_out) == (0, 0)
+
+
+def test_loi_vinh_vien_khong_thu_lai():
+    """Lỗi 401 (sai khóa) là vĩnh viễn: chỉ 1 lần gọi, Reflector báo cả lô thất bại."""
+
+    class _Fail401Server(_FakeServer):
+        def handler(self, request: httpx2.Request) -> httpx2.Response:
+            self.calls.append(request)
+            return httpx2.Response(
+                401,
+                json={"error": {"message": "sai khóa", "type": "error"}},
+            )
+
+    server = _Fail401Server([_rules_text(_rule())])
+    client = openai.OpenAI(
+        base_url=CPU_BASE_URL,
+        api_key="local",
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(server.handler)),
+    )
+    model = OpenAICompatibleModel(
+        client, model=MODEL_ID, max_retries=3, retry_base_delay_seconds=0.0
+    )
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError) as excinfo:
+        reflector.reflect([_trajectory("c1", ["A", "B"])], [])
+    assert len(server.calls) == 1
+    assert isinstance(excinfo.value.__cause__, ModelCallError)

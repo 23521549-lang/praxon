@@ -99,6 +99,25 @@ class Settings(BaseModel):
     test hợp đồng truyền 0,0 để không chờ thật.
     """
 
+    reflector_batch_size: int = 10
+    """Số trajectory mỗi lô Reflector (task 6.4, BĐ4 spec dòng 89).
+
+    Reflector gọi mô hình một lần mỗi lô (spec dòng 76). Mặc định 10
+    trajectory mỗi lô — đủ nhỏ để prompt gọn (log tổng hợp có 8 hoạt
+    động mỗi trace), đủ lớn để một vòng học không gọi mô hình quá nhiều
+    lần. Ghi đè trong tệp TOML hoặc biến môi trường
+    `PRAXON_REFLECTOR_BATCH_SIZE` khi cần.
+    """
+
+    reflector_max_insights_per_batch: int = 20
+    """Số insight tối đa mỗi lô Reflector (task 6.4, BĐ4 spec dòng 89).
+
+    Vượt trần thì Reflector cắt ở trần, không tràn (task 6.4). Mặc định
+    20 — cùng bậc với số luật miner khám phá trên một log đô thị. Trần
+    tính theo từng lô, không phải toàn bộ vòng học. Ghi đè trong tệp TOML
+    hoặc biến môi trường `PRAXON_REFLECTOR_MAX_INSIGHTS_PER_BATCH` khi cần.
+    """
+
 
 def load_settings(path: Path) -> Settings:
     """Nạp cấu hình từ một tệp TOML, cho biến môi trường ghi đè từng khóa."""
