@@ -21,6 +21,23 @@ on:
 jobs:
   cong-may:
     runs-on: ubuntu-latest
+    services:
+      # Postgres 16 + pgvector cho test tích hợp plan con 2 (cùng image với compose.yml).
+      # Mật khẩu lấy từ secret CI_POSTGRES_PASSWORD (Settings → Secrets and variables
+      # → Actions). DB này chỉ tồn tại trong lúc job chạy nên giá trị secret là tùy ý.
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_DB: praxon
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d praxon"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -64,5 +81,13 @@ jobs:
       - name: Cổng — phép thử ranh giới, core cài và chạy một mình
         run: python -m tools.check_core_standalone
 
+      - name: Migration cơ sở dữ liệu (plan con 2)
+        env:
+          PRAXON_DATABASE_URL: postgresql://postgres:${{ secrets.CI_POSTGRES_PASSWORD }}@localhost:5432/praxon
+        run: python -m tools.db_migrate
+
       - name: Test và độ phủ
+        env:
+          # Biến riêng cho test tích hợp để không nhiễu test settings.
+          PRAXON_TEST_DATABASE_URL: postgresql://postgres:${{ secrets.CI_POSTGRES_PASSWORD }}@localhost:5432/praxon
         run: python -m pytest
