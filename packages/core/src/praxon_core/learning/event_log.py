@@ -53,7 +53,11 @@ def role_call_event(
 
 
 def governor_decision_event(
-    result: GovernorResult, *, tenant_id: str, run_id: str, candidate_id: str
+    result: GovernorResult,
+    *,
+    tenant_id: str,
+    run_id: str | None = None,
+    candidate_id: str,
 ) -> EventRow:
     """Xây event cho một quyết định của Governor (thuần, không ghi DB).
 
@@ -62,6 +66,10 @@ def governor_decision_event(
     duyệt ghi, luật 8); nếu Governor tự quyết mà candidate chưa có người
     duyệt thì ghi 'governor'. `payload_hash` là SHA-256 của candidate đã ghi
     `rule_id`/`metrics_at_decision`, để chạy lại ra đúng quyết định cũ.
+
+    `run_id` để None khi coordinator xây event trước lúc ghi `run` (id
+    chỉ có sau `insert_run` — người gọi điền vào bằng `dataclasses.replace`
+    trước khi ghi event); `EventRow` vốn đã cho `run_id` None.
     """
     candidate = result.candidate
     payload_hash = hashlib.sha256(candidate.model_dump_json().encode("utf-8")).hexdigest()
