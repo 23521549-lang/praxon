@@ -126,7 +126,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
-| 4.1 | Bản quyết định kiến trúc ghi nguồn của từng mẫu Declare | Tệp tồn tại ở `docs/decisions/`, mỗi mẫu trỏ một định nghĩa trong bài báo | chưa làm | chưa review |
+| 4.1 | Bản quyết định kiến trúc ghi nguồn của từng mẫu Declare | Tệp tồn tại ở `docs/decisions/`, mỗi mẫu trỏ một định nghĩa trong bài báo | xong | chưa review |
 | 4.2 | Chỉ mục vị trí đầu và cuối của mỗi hoạt động trong mỗi trace | Unit test ngữ nghĩa: `Response(a,b)` đúng khi b sau lần a cuối; `Precedence(a,b)` đúng khi a đầu trước b đầu | chưa làm | chưa review |
 | 4.3 | Lọc trước theo `support × confidence` | Test: tập luật sau lọc trùng tập luật khi không lọc, trên một lát nhỏ | chưa làm | chưa review |
 | 4.4 | Test hiệu năng trong CI | `pytest tests/perf` dưới 30 giây trên log giả cỡ đô thị 1, không lọc trước | chưa làm | chưa review |
