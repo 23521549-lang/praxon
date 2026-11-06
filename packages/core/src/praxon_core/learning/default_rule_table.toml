@@ -1,0 +1,195 @@
+# Bảng luật mặc định của Governor — chín luật trong spec giai đoạn 1.
+#
+# Mọi con số chính sách nằm ở [policy]; các luật tham chiếu chúng bằng
+# { policy = "<tên>" } để con số chỉ tồn tại ở một chỗ duy nhất.
+
+[policy]
+confidence_threshold = 0.7
+promote_probability = 0.95
+retire_probability = 0.05
+prior_strength_default = 4
+min_matching_cases = 30
+
+[[rules]]
+id = 1
+applies_to = "Fact của tenant"
+verdict = "needs_human"
+[rules.condition]
+kind = "compare"
+measure = "has_direct_conflict"
+op = "=="
+value = true
+
+[[rules]]
+id = 2
+applies_to = "Ràng buộc mới, từ trace hoặc từ tài liệu"
+verdict = "auto_approve"
+target_status = "trial"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "compare"
+measure = "schema_valid"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "any"
+[[rules.condition.children.children]]
+kind = "compare"
+measure = "from_trace"
+op = "=="
+value = false
+[[rules.condition.children.children]]
+kind = "compare"
+measure = "wilson_lower"
+op = ">="
+value = { policy = "confidence_threshold" }
+[[rules.condition.children]]
+kind = "any"
+[[rules.condition.children.children]]
+kind = "compare"
+measure = "has_condition"
+op = "=="
+value = false
+[[rules.condition.children.children]]
+kind = "compare"
+measure = "matching_cases"
+op = ">="
+value = { policy = "min_matching_cases" }
+
+[[rules]]
+id = 3
+applies_to = "Fact đang trial"
+verdict = "auto_approve"
+target_status = "active"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = false
+[[rules.condition.children]]
+kind = "compare"
+measure = "fact_status"
+op = "=="
+value = "trial"
+[[rules.condition.children]]
+kind = "compare"
+measure = "beta_prob"
+op = ">="
+value = { policy = "promote_probability" }
+
+[[rules]]
+id = 4
+applies_to = "Fact đang trial hoặc active"
+verdict = "auto_approve"
+target_status = "retired"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = false
+[[rules.condition.children]]
+kind = "compare"
+measure = "fact_status"
+op = "in"
+value = ["trial", "active"]
+[[rules.condition.children]]
+kind = "compare"
+measure = "beta_prob"
+op = "<"
+value = { policy = "retire_probability" }
+
+[[rules]]
+id = 5
+applies_to = "Nâng lên global"
+verdict = "needs_human"
+[rules.condition]
+kind = "compare"
+measure = "is_scope_promotion"
+op = "=="
+value = true
+
+[[rules]]
+id = 6
+applies_to = "Fact global áp cho một tenant"
+verdict = "auto_approve"
+target_status = "trial"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "compare"
+measure = "from_global"
+op = "=="
+value = true
+
+[[rules]]
+id = 7
+applies_to = "Ràng buộc có điều kiện thuộc tính"
+verdict = "reject"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "compare"
+measure = "has_condition"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "compare"
+measure = "matching_cases"
+op = "<"
+value = { policy = "min_matching_cases" }
+
+[[rules]]
+id = 8
+applies_to = "Fact đang trial"
+verdict = "auto_approve"
+target_status = "active"
+[rules.condition]
+kind = "all"
+[[rules.condition.children]]
+kind = "compare"
+measure = "is_new"
+op = "=="
+value = false
+[[rules.condition.children]]
+kind = "compare"
+measure = "fact_status"
+op = "=="
+value = "trial"
+[[rules.condition.children]]
+kind = "compare"
+measure = "human_early_activate"
+op = "=="
+value = true
+[[rules.condition.children]]
+kind = "compare"
+measure = "has_rubric_clause"
+op = "=="
+value = true
+
+[[rules]]
+id = 9
+applies_to = "Còn lại"
+verdict = "wait"
+[rules.condition]
+kind = "all"
+children = []
