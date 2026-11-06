@@ -8,13 +8,26 @@ from tools.check_thirdparty_data import offending, tracked_files
 
 @pytest.mark.parametrize(
     "path",
-    ["data/bpic2015_1.xes", "docs/bang.csv", "log.gz", "packages/core/src/x.csv"],
+    [
+        "data/bpic2015_1.xes",
+        "docs/bang.csv",
+        "log.gz",
+        "packages/core/src/x.csv",
+        "data/text_to_ltl.xlsx",
+    ],
 )
 def test_bat_du_lieu_trong_kho(path):
     assert offending([path]) == [path]
 
 
-@pytest.mark.parametrize("path", ["tests/fixtures/log_nho.xes", "tests/fixtures/sub/bang.csv"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/fixtures/log_nho.xes",
+        "tests/fixtures/sub/bang.csv",
+        "tests/fixtures/bang.xlsx",
+    ],
+)
 def test_cho_phep_fixture_cua_test(path):
     assert offending([path]) == []
 

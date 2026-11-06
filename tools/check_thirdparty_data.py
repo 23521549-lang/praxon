@@ -14,7 +14,7 @@ import subprocess
 import sys
 from collections.abc import Iterable
 
-FORBIDDEN_SUFFIXES = (".xes", ".csv", ".gz")
+FORBIDDEN_SUFFIXES = (".xes", ".csv", ".gz", ".xlsx")
 ALLOWED_PREFIXES = ("tests/fixtures/",)
 
 

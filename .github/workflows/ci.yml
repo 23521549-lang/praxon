@@ -90,4 +90,10 @@ jobs:
         env:
           # Biến riêng cho test tích hợp để không nhiễu test settings.
           PRAXON_TEST_DATABASE_URL: postgresql://postgres:${{ secrets.CI_POSTGRES_PASSWORD }}@localhost:5432/praxon
-        run: python -m pytest
+        run: python -m pytest --ignore=tests/perf
+
+      - name: Cổng — hiệu năng khám phá Declare
+        # Chạy riêng, không coverage: đo coverage làm chậm vòng lặp trong của
+        # miner nên thời gian đo không còn phản ánh tốc độ thật (xem docstring
+        # tests/perf/test_discover_perf.py). Giới hạn 30 giây giữ nguyên.
+        run: python -m pytest tests/perf --no-cov
