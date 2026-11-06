@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal, TypeGuard
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from praxon_core.learning.beta import Prior, check_prior_invariant
 from praxon_core.learning.candidate import DecisionVerdict, FactStatus
 from praxon_core.learning.measures import MeasureName
 
@@ -157,7 +158,11 @@ def _check_value(
 
 
 class Rule(BaseModel):
-    """Một luật trong bảng: điều kiện khớp thì quyết định thắng."""
+    """Một luật trong bảng: điều kiện khớp thì quyết định thắng.
+
+    `prior` là tiên nghiệm khai trong gói luật (độ tin + độ mạnh); None
+    nghĩa là dùng độ mạnh mặc định của chính sách.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -166,6 +171,7 @@ class Rule(BaseModel):
     condition: Condition
     verdict: DecisionVerdict
     target_status: FactStatus | None = None
+    prior: Prior | None = None
 
 
 class Policy(BaseModel):
@@ -251,6 +257,16 @@ class RuleTable(BaseModel):
         ids = [rule.id for rule in self.rules]
         if len(set(ids)) != len(ids):
             raise ValueError(f"số hiệu luật trùng: {ids}")
+        priors = [
+            Prior(canonical_key="mặc định", confidence=1.0, strength=None),
+            *(rule.prior for rule in self.rules if rule.prior is not None),
+        ]
+        check_prior_invariant(
+            priors,
+            confidence_threshold=self.policy.confidence_threshold,
+            promote_probability=self.policy.promote_probability,
+            prior_strength_default=self.policy.prior_strength_default,
+        )
         return self
 
 

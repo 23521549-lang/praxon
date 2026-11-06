@@ -147,6 +147,37 @@ def prior_prob_ge(prior: Prior, threshold: float, *, strength_default: float) ->
     return beta_prob_ge(a, b, threshold)
 
 
+class PriorInvariantError(ValueError):
+    """Bất biến tiên nghiệm bị phá: tiên nghiệm một mình đã đủ lên chính thức."""
+
+
+def check_prior_invariant(
+    priors: list[Prior],
+    *,
+    confidence_threshold: float,
+    promote_probability: float,
+    prior_strength_default: float,
+) -> None:
+    """Kiểm bất biến tiên nghiệm cho từng luật trong gói.
+
+    Xác suất hậu nghiệm tính từ tiên nghiệm một mình phải dưới ngưỡng lên
+    chính thức; luật nào vi phạm thì từ chối nạp cả gói.
+    """
+    violators = []
+    for prior in priors:
+        prob = prior_prob_ge(
+            prior, confidence_threshold, strength_default=prior_strength_default
+        )
+        if prob >= promote_probability:
+            strength = prior.strength if prior.strength is not None else prior_strength_default
+            violators.append(
+                f"{prior.canonical_key} (độ tin {prior.confidence}, "
+                f"độ mạnh {strength}): P={prob:.4f} >= {promote_probability}"
+            )
+    if violators:
+        raise PriorInvariantError("bất biến tiên nghiệm bị phá: " + "; ".join(violators))
+
+
 def posterior_prob_ge(
     prior: Prior,
     successes: int,
