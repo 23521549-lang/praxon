@@ -11,6 +11,8 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
     "pydantic>=2.13,<3",
+    "openai>=3.46,<4",
+    "jsonschema>=4.26,<5",
 ]
 
 [tool.setuptools.packages.find]

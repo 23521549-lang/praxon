@@ -9,3 +9,7 @@ pytest-cov==7.1.0
 ruff==0.16.10
 psycopg==3.3.6
 psycopg-binary==3.3.6
+# Stub kiểu cho mypy (task 6.1): `jsonschema` không kèm py.typed, mypy strict
+# cần gói stub này để kiểm kiểu cho lệnh validate ở phía host. Chỉ dùng lúc
+# kiểm kiểu, không vào cây phụ thuộc runtime của core.
+types-jsonschema==4.26.0.20261006
