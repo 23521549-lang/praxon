@@ -145,6 +145,18 @@ def f1_score(precision_value: float, recall_value: float) -> float:
     return 2 * precision_value * recall_value / total
 
 
+def violated_flags(facts: Sequence[Fact], traces: Sequence[Trace]) -> list[bool]:
+    """Từng fact `active` có bị quá 10% trace đo vi phạm không (theo thứ tự fact).
+
+    Báo cáo baseline (8.5) cần cờ này để bootstrap khoảng tin cậy cho
+    tỉ lệ vi phạm và negative transfer: tính một lần trên tập đo cố định
+    rồi lấy mẫu lại các cờ, thay vì tính lại chỉ số trên mỗi lần rút.
+    """
+    active = _active_facts(facts)
+    violated_keys = {fact.canonical_key for fact in _violated_facts(facts, traces)}
+    return [fact.canonical_key in violated_keys for fact in active]
+
+
 def violation_rate(facts: Sequence[Fact], traces: Sequence[Trace]) -> float:
     """Phần fact `active` bị quá 10% trace đo vi phạm. Không có fact `active` thì 0."""
     active = _active_facts(facts)

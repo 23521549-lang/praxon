@@ -136,6 +136,23 @@ def test_ground_truth_rong_khi_khong_co_trace_do():
     assert truth.source == BPIC_TEST_SPLIT_SOURCE
 
 
+def test_facts_from_rules_tra_theo_thu_tu_khoa_canonical():
+    """Thứ tự fact đã sắp xếp.
+
+    Bootstrap lấy mẫu theo chỉ số nên thứ tự phải ổn định qua mọi lần
+    chạy (frozenset lặp không ổn định).
+    """
+    rules = discover(
+        _test_traces(),
+        support=GROUND_TRUTH_SUPPORT,
+        confidence=GROUND_TRUTH_CONFIDENCE,
+    )
+    facts = facts_from_rules(rules, TENANT)
+    assert [fact.canonical_key for fact in facts] == sorted(
+        fact.canonical_key for fact in facts
+    )
+
+
 def test_ground_truth_bat_bien():
     truth = GroundTruth(
         tenant_id=TENANT,

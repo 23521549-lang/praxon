@@ -116,16 +116,23 @@ def facts_from_rules(
     fact `active` thuộc tenant (đường cong 8.4 và báo cáo 8.5 dùng mặc
     định này; điểm 0 của đường cong truyền `status=TRIAL` rồi chấm ở
     chế độ giám sát — xem `cold_start.py`).
+    Trả fact theo thứ tự khóa canonical (đã sắp xếp): `discover` trả
+    frozenset nên thứ tự lặp của nó thay đổi theo tiến trình (băm chuỗi
+    ngẫu nhiên) — sắp xếp ở đây để mọi phép đo dùng fact (kể cả
+    bootstrap lấy mẫu lại theo chỉ số) cho đúng kết quả khi chạy lại.
     """
-    return [
-        Fact(
-            canonical_key=rule.canonical_key,
-            template=rule.template,
-            activation=rule.first,
-            target=rule.second,
-            status=status,
-            scope=scope,
-            tenant_id=tenant_id,
-        )
-        for rule in rules
-    ]
+    return sorted(
+        (
+            Fact(
+                canonical_key=rule.canonical_key,
+                template=rule.template,
+                activation=rule.first,
+                target=rule.second,
+                status=status,
+                scope=scope,
+                tenant_id=tenant_id,
+            )
+            for rule in rules
+        ),
+        key=lambda fact: fact.canonical_key,
+    )
