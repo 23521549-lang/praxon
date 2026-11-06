@@ -77,6 +77,14 @@ Các trường của task 6.1 (mặc định đã là backend CPU; chỉ ghi đ�
   non-thinking (xem đề xuất 6.1, rủi ro #2). Cách bật/tắt tùy theo template
   chat của llama-server ở thời điểm chạy — kiểm bằng test xác định và bằng
   lần chạy kiểm tích hợp với server thật, rồi ghi lại cách làm đúng ở đây.
+- Đã kiểm (7/11/2026, task 6.5, llama-server build 12177): template chat
+  của model có biến `enable_thinking` (mặc định bật — model sinh khối
+  `<think>` dài hàng trăm token trước đáp án; một lần gọi thử bị hủy ở
+  358 token sinh ra mà chưa xong, ~6 phút). Tắt bằng cờ khởi động server:
+  `--chat-template-kwargs '{"enable_thinking": false}'` — sau đó model trả
+  JSON ngắn đúng schema (11 token) trong ~35 giây và cùng seed cho cùng
+  kết quả (kiểm 2 lần gọi giống hệt nhau). Chạy server đo 6.5 phải có cờ
+  này, nếu không mỗi câu tốn hàng phút và đáp án bị khối think làm loãng.
 
 ## 5. Khi server lỗi
 
