@@ -108,8 +108,8 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 3.1 | Bộ tải log BPIC 2015 từ nguồn gốc, kiểm băm, không đóng gói vào kho | Lệnh tải xong, băm khớp giá trị đã ghi; bước CI chặn dữ liệu vẫn mã thoát 0 | xong | chưa review |
 | 3.2 | Bảng hồ sơ: số case, số sự kiện, số loại hoạt động, phân phối theo thời gian, danh sách thuộc tính phân loại có mặt | Lệnh in bảng; số case khớp 1.199 / 832 / 1.409 / 1.053 / 1.156 — đối chiếu bài báo số 1 của BPIC 2015 | xong | chưa review |
-| 3.3 | Chia theo thời điểm bắt đầu case 60/20/20; `data_hash` băm tệp log, tham số chia, danh sách tenant | Test: không case nào nằm ở hai phần; mọi case ở phần học bắt đầu trước mọi case ở phần đo; đổi tham số chia thì `data_hash` đổi | đang làm | chưa review |
-| 3.4 | Báo cáo mức khác biệt giữa năm đô thị và số hoạt động còn lại sau lọc | Báo cáo sinh bằng lệnh, có số; nếu log hỏng hoặc thiếu trường thì dừng và quay về spec | chưa làm | chưa review |
+| 3.3 | Chia theo thời điểm bắt đầu case 60/20/20; `data_hash` băm tệp log, tham số chia, danh sách tenant | Test: không case nào nằm ở hai phần; mọi case ở phần học bắt đầu trước mọi case ở phần đo; đổi tham số chia thì `data_hash` đổi | xong | chưa review |
+| 3.4 | Báo cáo mức khác biệt giữa năm đô thị và số hoạt động còn lại sau lọc | Báo cáo sinh bằng lệnh, có số; nếu log hỏng hoặc thiếu trường thì dừng và quay về spec | xong | chưa review |
 
 **Luồng song song, hạn tuần 1:** chủ dự án đọc điều khoản Kaggle trước khi dùng tài khoản thứ hai.
 
@@ -230,7 +230,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | 9.1 | Trích luật thứ tự từ Wabo vào `global`, kế thừa `valid_during` của văn bản | Lệnh in số luật trích được và số bị cổng Beta loại; test: fact từ Wabo mang khoảng hiệu lực của Wabo | chưa làm | chưa review |
 | 9.2 | Gắn khái niệm tiếng Hà Lan với tên hoạt động trong log, là một bước có kiểm | Test: bảng gắn nạp được, gắn sai thì luật bị cổng loại chứ không áp sai | chưa làm | chưa review |
 | 9.3 | Quyết định của người dùng thành `Candidate` kèm `decided_by` và `rubric_clause` | Test: không có đường ghi tắt nào vòng qua `Candidate`; thiếu `rubric_clause` thì từ chối | xong | chưa review |
-| 9.4 | Rubric duyệt viết trước, khóa bằng commit; duyệt chéo mù một phần năm quyết định thủ công | Rubric có mã commit trước quyết định thủ công đầu tiên; lệnh tính kappa, ngưỡng ≥ 0,61 | chưa xong (xong lệnh kappa, thiếu rubric) | chưa review |
+| 9.4 | Rubric duyệt viết trước, khóa bằng commit; duyệt chéo mù một phần năm quyết định thủ công | Rubric có mã commit trước quyết định thủ công đầu tiên; lệnh tính kappa, ngưỡng ≥ 0,61 | xong | chưa review |
 | 9.5 | Kiểm điều kiện thuộc tính phân loại trên loại matching của BPIC 2019 | Lệnh in số case trong phần thỏa điều kiện; dưới 30 case thì loại theo luật 7 | chưa làm | chưa review |
 | 9.6 | Hiệu chỉnh 0,7; 0,95; 0,05; độ mạnh tiên nghiệm; phần tối thiểu 30 case — chỉ trên phần hiệu chỉnh | Test: bộ điều phối từ chối hiệu chỉnh trên phần đo; độ mạnh tiên nghiệm thử ít nhất ba giá trị, tất cả trong vùng bất biến cho phép | chưa làm | chưa review |
 | 9.7 | Biên bản kiểm cầu dao 50% | Văn bản ở `docs/plans/phase-1-core/`: đã xong bao nhiêu phần việc cốt lõi, cắt gì nếu chưa đạt | chưa làm | chưa review |
