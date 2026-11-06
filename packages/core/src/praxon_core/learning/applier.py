@@ -13,15 +13,52 @@ nào). Mỗi hàm vai xây một `FactRow`; người gọi ghi hàng đó qua
 `repositories.facts.insert_fact` bằng kết nối dưới đúng vai ứng dụng
 (`<tenant>__applier` cho tenant, `promoter` cho global). Quyền + RLS +
 trigger V4 chặn ở tầng DB khi ghi qua vai sai.
+
+Ngữ nghĩa áp theo loại Delta (task P): ADD thì INSERT fact mới; RETIRE
+thì đóng fact cũ (`build_fact_close` + `close_fact`, không tạo hàng mới);
+CONTRADICT thì đóng fact cũ + thêm fact mới mang khóa đối nghịch, trong
+một giao dịch; CONFIRM thì không INSERT. `build_fact_row` từ chối
+RETIRE/CONFIRM (chúng không tạo fact mới); `build_fact_close` chỉ nhận
+RETIRE/CONTRADICT. Coordinator nối các bước lại trong một transaction.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from praxon_core.learning.candidate import Candidate
 from praxon_core.learning.payload import FactPayload
-from praxon_core.repositories.facts import FactRow
+from praxon_core.repositories.facts import FactClose, FactRow
+
+
+def build_fact_close(candidate: Candidate, *, retired_at: datetime) -> FactClose:
+    """Xây lệnh đóng fact cũ từ candidate RETIRE/CONTRADICT đã duyệt (thuần).
+
+    Đọc `kind` + `fact_id` từ payload (hợp đồng D+F): RETIRE/CONTRADICT
+    đều tác động lên một fact hiện có. Từ chối candidate chưa duyệt (BĐ3,
+    như `build_fact_row`), từ chối loại Delta khác RETIRE/CONTRADICT và
+    từ chối khi thiếu `fact_id` — Applier không biết đóng fact nào.
+
+    `retired_at` (thời điểm fact nghỉ) do coordinator truyền vào — thời
+    điểm duyệt/áp; hàm thuần không tự lấy giờ (giữ tính xác định).
+    Người gọi ghi lệnh này qua `repositories.facts.close_fact` bằng kết
+    nối dưới đúng vai ứng dụng.
+    """
+    if candidate.status != "approved":
+        raise ValueError(
+            f"chỉ áp candidate đã duyệt (candidate đang ở trạng thái {candidate.status!r})"
+        )
+    payload = FactPayload.model_validate(candidate.payload)
+    if payload.kind not in ("retire", "contradict"):
+        raise ValueError(
+            f"chỉ đóng fact cũ cho RETIRE/CONTRADICT (candidate mang kind {payload.kind!r})"
+        )
+    if payload.fact_id is None:
+        raise ValueError(
+            f"không đóng được fact cũ: payload thiếu fact_id (kind {payload.kind!r})"
+        )
+    return FactClose(fact_id=payload.fact_id, retired_at=retired_at)
 
 
 def build_fact_row(candidate: Candidate, *, candidate_id: str, tenant_id: str) -> FactRow:
@@ -30,6 +67,12 @@ def build_fact_row(candidate: Candidate, *, candidate_id: str, tenant_id: str) -
     Từ chối candidate chưa có quyết định (status khác 'approved') — BĐ3 còn
     được V4 chặn ở tầng DB, nhưng từ chối sớm ở đây cho lỗi rõ ràng. Scope lấy
     từ candidate.target_scope; tenant_id của fact là tenant của candidate.
+
+    Chỉ nhận ADD và CONTRADICT (phần thêm fact mới mang khóa đối nghịch):
+    RETIRE/CONFIRM không tạo fact mới — RETIRE chỉ đóng fact cũ (dùng
+    `build_fact_close` + `close_fact`), CONFIRM thì fact đã có sẵn. Tạo
+    FactRow mới cho hai loại này là sai ngữ nghĩa và vi phạm BĐ5 (INSERT
+    cùng khóa trong khi fact cũ còn "known" bị exclusion chặn).
     """
     if candidate.status != "approved":
         raise ValueError(
@@ -37,6 +80,12 @@ def build_fact_row(candidate: Candidate, *, candidate_id: str, tenant_id: str) -
             f"{candidate.status!r})"
         )
     payload = FactPayload.model_validate(candidate.payload)
+    if payload.kind in ("retire", "confirm"):
+        raise ValueError(
+            f"không tạo FactRow mới cho {payload.kind.upper()} (candidate "
+            f"{candidate_id}): RETIRE chỉ đóng fact cũ, CONFIRM thì fact "
+            "đã có sẵn"
+        )
     return FactRow(
         tenant_id=tenant_id,
         scope=candidate.target_scope,

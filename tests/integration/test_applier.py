@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from psycopg.errors import InsufficientPrivilege, RaiseException
 
-from praxon_core.learning.applier import apply_candidate, promote_candidate
+from praxon_core.learning.applier import apply_candidate, build_fact_close, promote_candidate
 from praxon_core.learning.candidate import Candidate
-from praxon_core.repositories.facts import insert_fact
+from praxon_core.repositories.facts import FactClose, close_fact, insert_fact
 
 from .conftest import as_role, one
 
@@ -196,3 +197,89 @@ def test_promoter_ghi_fact_global_tu_candidate_da_duyet(pg: None) -> None:
         0.0,
     )
     assert str(row[8]) == candidate_id
+
+
+def _insert_fact_global(key: str, status: str = "trial") -> tuple[str, str]:
+    """Ghi fact global qua promoter; trả (candidate_id, fact_id)."""
+    payload = _payload(key)
+    payload["status"] = status
+    candidate_id, candidate = _make_approved("acme", "global", payload)
+    with as_role("promoter") as conn:
+        assert insert_fact(conn, promote_candidate(candidate, candidate_id=candidate_id))
+    with as_role("acme__reader") as conn:
+        (fact_id,) = one(conn, "SELECT id FROM fact WHERE candidate_id = %s", (candidate_id,))
+    return candidate_id, str(fact_id)
+
+
+def test_retire_dong_fact_cu(pg: None) -> None:
+    """RETIRE đóng fact cũ: status retired, known_during kết thúc ở retired_at."""
+    key = _unique_key("retire")
+    _, fact_id = _insert_fact_global(key)
+    opp_key = _unique_key("retire-opp")
+    payload = _payload(opp_key)
+    payload["template"] = "not_response"
+    payload["kind"] = "retire"
+    payload["fact_id"] = fact_id
+    _, candidate = _make_approved("acme", "global", payload)
+    retired_at = datetime(2030, 6, 1, tzinfo=UTC)
+    with as_role("promoter") as conn:
+        assert close_fact(conn, build_fact_close(candidate, retired_at=retired_at))
+    with as_role("acme__reader") as conn:
+        row = one(
+            conn,
+            "SELECT status, upper(known_during), canonical_key FROM fact WHERE id = %s::uuid",
+            (fact_id,),
+        )
+        (count,) = one(
+            conn,
+            "SELECT count(*) FROM fact WHERE canonical_key IN (%s, %s)",
+            (key, opp_key),
+        )
+    assert row == ("retired", retired_at, key)
+    assert count == 1
+
+
+def test_contradict_dong_fact_cu_va_them_fact_moi(pg: None) -> None:
+    """CONTRADICT: đóng fact cũ + thêm fact mới khóa đối nghịch, trong MỘT giao dịch.
+
+    Cả hai thao tác chạy trên cùng một kết nối promoter (`as_role` commit khi
+    thoát khối, rollback khi lỗi) nên hoặc cùng thành công hoặc cùng biến mất.
+    """
+    key = _unique_key("contradict")
+    _, fact_id = _insert_fact_global(key, status="active")
+    opp_key = _unique_key("contradict-opp")
+    payload = _payload(opp_key)
+    payload["template"] = "not_response"
+    payload["statement"] = "a not_response b"
+    payload["kind"] = "contradict"
+    payload["fact_id"] = fact_id
+    candidate_id, candidate = _make_approved("acme", "global", payload)
+    retired_at = datetime(2030, 6, 1, tzinfo=UTC)
+    with as_role("promoter") as conn:
+        assert close_fact(conn, build_fact_close(candidate, retired_at=retired_at))
+        assert insert_fact(conn, promote_candidate(candidate, candidate_id=candidate_id))
+    with as_role("acme__reader") as conn:
+        old = one(
+            conn,
+            "SELECT status, upper(known_during) FROM fact WHERE id = %s::uuid",
+            (fact_id,),
+        )
+        new = one(
+            conn,
+            "SELECT canonical_key, template, status FROM fact WHERE candidate_id = %s",
+            (candidate_id,),
+        )
+    assert old == ("retired", retired_at)
+    assert new == (opp_key, "not_response", "trial")
+
+
+def test_close_fact_khong_tim_thay_fact(pg: None) -> None:
+    """close_fact trả False khi không có fact nào mang fact_id đó (không raise)."""
+    with as_role("promoter") as conn:
+        assert not close_fact(
+            conn,
+            FactClose(
+                fact_id="00000000-0000-0000-0000-000000000000",
+                retired_at=datetime(2030, 6, 1, tzinfo=UTC),
+            ),
+        )
