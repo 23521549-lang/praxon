@@ -30,6 +30,13 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     database_url: str
+    bootstrap_draws: int = 1000
+    """Số lần rút của bootstrap (task 8.3).
+
+    Mặc định 1000 lần — đủ ổn định cho khoảng tin cậy 95%. Ghi đè trong tệp
+    TOML khi cần; bộ điều phối đọc giá trị này, không có số lần rút nào
+    hard-code trong hàm bootstrap.
+    """
 
 
 def load_settings(path: Path) -> Settings:
