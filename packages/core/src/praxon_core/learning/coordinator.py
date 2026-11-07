@@ -316,9 +316,12 @@ def run_learning_round(
     `status="approved"` trước khi áp — Governor chỉ ra verdict, không
     tự đổi trạng thái candidate (xem chuỗi Curator→Governor→Applier).
 
-    Scope chưa có ánh xạ sang `tenant`/`global` (vd tên tenant "acme"
-    mà `to_candidate` đang đặt — đang chờ quyết) thì raise ngay, không
-    lặng lẽ ánh xạ hộ hay bỏ qua candidate đã duyệt.
+    `target_scope` ở đây chỉ có thể là `'tenant'`/`'global'`:
+    `to_candidate` đã ánh xạ mọi scope Insight về hai giá trị này,
+    Governor và `model_copy` không đổi `target_scope` — nên nhánh
+    `else` fail-fast cũ (raise khi scope lạ) đã bị xóa vì không còn
+    giá trị nào tới được nó. Đường mới tạo Candidate phải giữ bất
+    biến này (xem `human_decision_to_candidate`, đã chặn scope lạ).
     """
     if round.on_test_split:
         check_test_split_lock(
@@ -390,12 +393,6 @@ def run_learning_round(
                     )
                 elif approved.target_scope == "global":
                     fact_rows.append(promote_candidate(approved, candidate_id=candidate_id))
-                else:
-                    raise ValueError(
-                        f"scope {approved.target_scope!r} chưa có ánh xạ sang "
-                        "'tenant'/'global' (candidate "
-                        f"{candidate_id}): không tự ánh xạ hộ"
-                    )
             # CONFIRM: fact đã có sẵn — không thêm hàng, không đóng fact.
     run_row = RunRow(
         tenant_id=round.tenant_id,
