@@ -1,0 +1,18 @@
+# Bản ghi khóa cấu hình phần đo (task 12.1, spec dòng 152).
+# CHƯA KHÓA - bản ghi tạm để test chạy được; KHÔNG dùng để chạy đo thật.
+# Commit đưa file này + configs/phan-do.toml vào repo LÀ khóa; mã commit
+# đó ghi ở lock_commit dưới đây. Không sửa file này tại chỗ - khóa lại
+# bằng commit khóa mới (đề xuất 12.1, mục 5, R5).
+# locked_config_hash dưới đây là hash thật tính từ configs/phan-do.toml
+# tạm (để test file-khớp-hash chạy được); lock_commit, code_commit và
+# data_hash đang là toàn số 0 vì chưa có bước khóa thật nào.
+locked_config_hash = "f47f0829190ae06a9edc8bc288d8eedda588bdcb80f90df29c14e8889c4d4089"
+lock_commit = "0000000000000000000000000000000000000000"
+code_commit = "0000000000000000000000000000000000000000"
+seed = 0
+model_id = "Qwen/Qwen3-8B-GGUF"
+model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
+data_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+cache = "empty"
+locked_at = "CHUA-KHOA"
+locked_by = "CHUA-KHOA"
