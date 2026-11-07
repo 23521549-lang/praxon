@@ -68,7 +68,7 @@ def test_bang_mac_dinh_nap_du_9_luat_va_tham_so():
     assert table.policy.confidence_threshold == 0.7
     assert table.policy.promote_probability == 0.95
     assert table.policy.retire_probability == 0.05
-    assert table.policy.prior_strength_default == 4
+    assert table.policy.prior_strength_default == 2
     assert table.policy.min_matching_cases == 30
 
 

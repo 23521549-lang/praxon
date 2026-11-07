@@ -118,7 +118,7 @@ def beta_prob_ge(a: float, b: float, threshold: float) -> float:
 class Prior(BaseModel):
     """Tiên nghiệm của một luật: độ tin c và độ mạnh s (số quan sát giả).
 
-    `strength` None nghĩa là dùng độ mạnh mặc định của chính sách — số 4
+    `strength` None nghĩa là dùng độ mạnh mặc định của chính sách — giá trị
     mặc định sống trong tệp chính sách, không hard-code ở đây.
     """
 
