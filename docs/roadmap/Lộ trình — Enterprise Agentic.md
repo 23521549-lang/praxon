@@ -59,7 +59,7 @@ Chứng minh hệ học đúng luật riêng của từng tổ chức mà không
 
 | Tuần | Việc chính | Ra được gì |
 | --- | --- | --- |
-| 1 · 5–11/10 | Repo và CI đủ cổng (giấy phép, import-linter, mypy strict, ruff, độ phủ); lược đồ Postgres với 21 phép tấn công, thêm bảng sự kiện chỉ thêm; bảng hồ sơ năm đô thị; chia thời gian 60/20/20; đọc điều khoản Kaggle | Luật dừng tuần 1: chỉ dừng nếu log hỏng |
+| 1 · 5–11/10 | Repo và CI đủ cổng (giấy phép, import-linter, mypy strict, ruff, độ phủ); lược đồ Postgres với 25 phép tấn công, thêm bảng sự kiện chỉ thêm; bảng hồ sơ năm đô thị; chia thời gian 60/20/20; đọc điều khoản Kaggle | Luật dừng tuần 1: chỉ dừng nếu log hỏng |
 | 2 · 12–18/10 | Khám phá Declare theo chỉ mục, test hiệu năng, đối chiếu pm4py ngoài kho; bộ sinh bán tổng hợp qua nghiệm thu; Reflector trên backend CPU; F1 trên 104 câu | Bài đo F1, bộ chuẩn đủ khó |
 | 3 · 19–25/10 | Curator, Governor (9 luật, cổng Beta, Wilson), Applier, Promoter; baseline chỉ-Declare và đường cong khởi động lạnh | Baseline — không có số này thì không đi tiếp |
 | 4 · 26/10–1/11 | Trích luật từ Wabo; quyết định của người dùng thành Candidate có rubric; hiệu chỉnh tham số trên phần hiệu chỉnh; khóa rubric, bắt đầu duyệt chéo mù | **Kiểm cầu dao 50%** cuối tuần này |
@@ -68,7 +68,7 @@ Chứng minh hệ học đúng luật riêng của từng tổ chức mà không
 | 7 · 16–22/11 | Khóa cấu hình bằng commit; chạy phần đo BPIC 2015 một lần; chạy lại để kiểm tái lập | Kết quả công bố được |
 | 8 · 23–29/11 | Báo cáo kết quả, bản demo chạy một lệnh; tuần đệm | Cổng 1 |
 
-**Cổng 1 — 29/11/2026.** Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu, in bốn chỉ số kèm khoảng tin cậy và bản ghi lần chạy, chạy lại ra đúng kết quả đó; 21 phép tấn công bị chặn; CI xanh; ba nền móng có test.
+**Cổng 1 — 29/11/2026.** Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu, in bốn chỉ số kèm khoảng tin cậy và bản ghi lần chạy, chạy lại ra đúng kết quả đó; 25 phép tấn công bị chặn; CI xanh; ba nền móng có test.
 
 **Tuần nghỉ 30/11 – 6/12:** trả nợ kỹ thuật, viết spec giai đoạn 2a và cho qua cổng spec.
 
