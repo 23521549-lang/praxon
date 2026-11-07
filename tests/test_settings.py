@@ -7,6 +7,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from praxon_core.learning.coordinator import (
+    compute_config_hash,
+    compute_config_hash_without_budget,
+)
 from praxon_core.settings import ENV_PREFIX, Settings, load_settings
 
 
@@ -155,3 +159,47 @@ def test_khoa_s3_chi_qua_bien_moi_truong(tmp_path, monkeypatch):
     assert settings.s3_bucket == "praxon-checkpoints"
     assert settings.checkpoint_every_n_cases == 50
     assert settings.checkpoint_store == "s3"
+
+
+def test_mac_dinh_tran_token(tmp_path):
+    # Task 10.4: mặc định không đặt trần (0 = tắt), dự trữ 2048 (= ctx-size).
+    settings = load_settings(_write(tmp_path, 'database_url = "x"\n'))
+    assert settings.token_budget_total == 0
+    assert settings.token_budget_reserve_per_call == 2048
+
+
+def test_ghi_de_tran_token_qua_toml(tmp_path):
+    path = _write(
+        tmp_path,
+        'database_url = "x"\ntoken_budget_total = 5000\ntoken_budget_reserve_per_call = 1024\n',
+    )
+    settings = load_settings(path)
+    assert settings.token_budget_total == 5000
+    assert settings.token_budget_reserve_per_call == 1024
+
+
+def test_ghi_de_tran_token_qua_bien_moi_truong(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN_BUDGET_TOTAL", "5000")
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN_BUDGET_RESERVE_PER_CALL", "1024")
+    path = _write(tmp_path, 'database_url = "x"\n')
+    settings = load_settings(path)
+    assert settings.token_budget_total == 5000
+    assert settings.token_budget_reserve_per_call == 1024
+
+
+def test_tran_token_am_thi_tu_choi(tmp_path):
+    path = _write(tmp_path, 'database_url = "x"\ntoken_budget_total = -1\n')
+    with pytest.raises(ValidationError):
+        load_settings(path)
+    path = _write(tmp_path, 'database_url = "x"\ntoken_budget_reserve_per_call = -1\n')
+    with pytest.raises(ValidationError):
+        load_settings(path)
+
+
+def test_doi_tran_doi_config_hash_nhung_khong_doi_hash_tru_tran(tmp_path):
+    settings = load_settings(_write(tmp_path, 'database_url = "x"\n'))
+    nang_tran = settings.model_copy(update={"token_budget_total": 5000})
+    assert compute_config_hash(nang_tran) != compute_config_hash(settings)
+    assert compute_config_hash_without_budget(nang_tran) == compute_config_hash_without_budget(
+        settings
+    )

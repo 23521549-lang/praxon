@@ -4,8 +4,9 @@ Bảng `run` đã có từ migration V1 (`repositories/migrations/V1__tables.sql
 seed, model_id, model_revision, code_commit, config_hash, data_hash,
 tokens_in, tokens_out, wall_time, status. V2 cấp cho vai coordinator
 quyền INSERT (chỉ thêm, không sửa — BĐ1); V3 bật RLS và chỉ cho
-coordinator của đúng tenant đó ghi. Vì vậy task 10.1 KHÔNG cần migration
-mới (không có V7): chỉ thêm lớp ghi theo đúng mẫu `repositories/facts.py`
+coordinator của đúng tenant đó ghi. V7 thêm giá trị `budget_exceeded`
+cho `status` (task 10.4, spec dòng 217). Task 10.1 KHÔNG cần migration
+mới: chỉ thêm lớp ghi theo đúng mẫu `repositories/facts.py`
 và `repositories/events.py` — một kiểu hàng thuần + một hàm INSERT, dùng
 `psycopg`, và chỉ module này được import driver DB cho bảng `run`.
 """
@@ -27,7 +28,8 @@ class RunRow:
     lặng lẽ cho qua. `tokens_in`/`tokens_out` là token vào ra của mô
     hình trong lần chạy; `wall_time` là thời gian tường của lần chạy
     (giây); `status` là `running` khi bắt đầu, `succeeded`/`failed`
-    khi kết thúc (V1 chỉ cho ba giá trị này).
+    khi kết thúc (V1 chỉ cho ba giá trị này; V7 thêm `budget_exceeded`
+    cho vòng học chạm trần token — task 10.4).
     """
 
     tenant_id: str

@@ -46,6 +46,13 @@ class Checkpoint(BaseModel):
     `seed` + `model_id` + `model_revision` + `config_hash` + `data_hash`
     là khóa chống chạy tiếp sai vòng (rủi ro R4): resume chỉ chạy khi mọi
     giá trị này khớp với vòng mới; khác một giá trị là từ chối.
+
+    Trần token (task 10.4, Phụ lục A.3): `token_budget_total` +
+    `token_budget_reserve_per_call` là trần/dự trữ của vòng đã ghi
+    checkpoint; `config_hash_no_budget` là hash cấu hình đã loại hai
+    trường trần — cổng resume so hash này thay vì hash toàn phần để cho
+    phép chạy tiếp khi chỉ khác trần. Mặc định `0`/`0`/`""` = checkpoint
+    viết trước 10.4 (chưa có trần / chưa có hash-trừ-trần).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -68,6 +75,9 @@ class Checkpoint(BaseModel):
     cache_entries: dict[str, str] = {}
     tokens_in: int = 0
     tokens_out: int = 0
+    token_budget_total: int = 0
+    token_budget_reserve_per_call: int = 0
+    config_hash_no_budget: str = ""
 
 
 class CheckpointStore(Protocol):

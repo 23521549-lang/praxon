@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -112,6 +113,31 @@ def payload_hash(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+_CONFIG_HASH_EXCLUDED: tuple[str, ...] = (
+    "database_url",
+    "openai_api_key",
+    "s3_endpoint_url",
+    "s3_bucket",
+    "s3_access_key_id",
+    "s3_secret_access_key",
+)
+"""Trường Settings không vào `config_hash`: đổi DB, đổi nơi lưu checkpoint
+hay xoay khóa không đổi kết quả nên không được đổi hash; khóa thì không bao
+giờ được đưa vào hash."""
+
+
+def _hash_config(settings: Settings, *, without_budget: bool) -> str:
+    """Băm cấu hình chạy; `without_budget` thì loại thêm hai trường trần."""
+    data = settings.model_dump(mode="json")
+    for key in _CONFIG_HASH_EXCLUDED:
+        data.pop(key, None)
+    if without_budget:
+        data.pop("token_budget_total", None)
+        data.pop("token_budget_reserve_per_call", None)
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def compute_config_hash(settings: Settings) -> str:
     """Băm cấu hình chạy thành `config_hash` (một trong sáu trường của `run`).
 
@@ -122,15 +148,19 @@ def compute_config_hash(settings: Settings) -> str:
     đưa vào hash. Mọi trường còn lại đổi là hash đổi — thận trọng: đổi cấu
     hình thì lần chạy cũ không còn tái lập được.
     """
-    data = settings.model_dump(mode="json")
-    data.pop("database_url", None)
-    data.pop("openai_api_key", None)
-    data.pop("s3_endpoint_url", None)
-    data.pop("s3_bucket", None)
-    data.pop("s3_access_key_id", None)
-    data.pop("s3_secret_access_key", None)
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return _hash_config(settings, without_budget=False)
+
+
+def compute_config_hash_without_budget(settings: Settings) -> str:
+    """Băm cấu hình đã loại hai trường trần (task 10.4).
+
+    Giống `compute_config_hash` nhưng loại thêm `token_budget_total` và
+    `token_budget_reserve_per_call`: hai vòng chỉ khác trần thì có cùng
+    hash-trừ-trần, để cổng resume chứng minh được "chỉ khác trần" (xem
+    `_check_resume_matches`). CHỈ dùng cho cổng resume — `run` vẫn ghi
+    `config_hash` toàn phần (đổi trần là đổi kết quả nên phải đổi hash).
+    """
+    return _hash_config(settings, without_budget=True)
 
 
 def merge_data_hash(*, bpic_hash: str | None = None, generator_hash: str | None = None) -> str:
@@ -278,6 +308,17 @@ class LearningRound:
     danh sách case, seed/config/data/model phải khớp — xem
     `_check_resume_matches`); `cache` là bộ nhớ đệm phản hồi mà checkpoint
     giữ hộ (khởi động lại thì nạp lại vào cache này trước khi chạy tiếp).
+
+    Trần token (task 10.4, spec dòng 217): `token_budget_total` là trần
+    token của vòng (`0` = không đặt trần); `token_budget_reserve_per_call`
+    là dự trữ cho một lần gọi mô hình (mặc định 2048 = `ctx-size` của
+    server); `reflector_batch_size` là số trajectory mỗi lô Reflector
+    (bên gọi điền từ Settings — cần cho công thức dự trữ, xem Phụ lục
+    A.1); `config_hash_no_budget` là hash cấu hình đã loại hai trường
+    trần (bên gọi tính bằng `compute_config_hash_without_budget` — để
+    ghi vào checkpoint cho cổng resume, xem Phụ lục A.3). Trần > 0 mà
+    không ghi checkpoint thì vòng bị từ chối từ đầu (chạm trần thì phải
+    có checkpoint để chạy tiếp).
     """
 
     tenant_id: str
@@ -299,6 +340,10 @@ class LearningRound:
     checkpoint_store: CheckpointStore | None = None
     resume_from: Checkpoint | None = None
     cache: ResponseCache | None = None
+    token_budget_total: int = 0
+    token_budget_reserve_per_call: int = 2048
+    reflector_batch_size: int = 10
+    config_hash_no_budget: str = ""
 
 
 @dataclass(frozen=True)
@@ -324,6 +369,84 @@ class RoundOutcome:
     fact_closes: tuple[FactClose, ...]
     events: tuple[EventRow, ...]
     run_row: RunRow
+
+
+class BudgetExceededError(Exception):
+    """Vòng học chạm trần token (task 10.4, spec dòng 217).
+
+    Mang theo partial `RoundOutcome` (trạng thái tới hết lô đã xong,
+    `run_row.status="budget_exceeded"`) để bên gọi ghi `run` + event rồi
+    thoát mã 3 — không nuốt lỗi, không trả outcome thành công (L6).
+    `checkpoint_key` là khóa checkpoint ở ranh giới lô đã xong (`None`
+    nếu ghi checkpoint thất bại — xem R4: mất checkpoint thì bên gọi vẫn
+    ghi được `run` `budget_exceeded`, chỉ không có điểm chạy tiếp).
+    """
+
+    def __init__(self, *, outcome: RoundOutcome, checkpoint_key: str | None) -> None:
+        """Dựng lỗi từ partial outcome + khóa checkpoint (None nếu ghi lỗi)."""
+        used = outcome.run_row.tokens_in + outcome.run_row.tokens_out
+        checkpoint_note = (
+            f"checkpoint {checkpoint_key}"
+            if checkpoint_key is not None
+            else "ghi checkpoint thất bại (không có điểm chạy tiếp)"
+        )
+        super().__init__(
+            f"vượt trần token: đã dùng {used} token, run "
+            f"{outcome.run_row.status}, {checkpoint_note}"
+        )
+        self.outcome = outcome
+        self.checkpoint_key = checkpoint_key
+
+
+class _BudgetExceededError(Exception):
+    """Tín hiệu nội bộ: điểm kiểm trần trong `_run_chunk` vừa chạm trần.
+
+    Chỉ mang `reserve` (dự trữ của lô chưa chạy) và `calls` (số lần gọi
+    tối đa của lô) để `run_learning_round` ghi event + checkpoint rồi
+    raise `BudgetExceededError` — `_run_chunk` không tự dựng outcome
+    (trạng thái tích lũy nằm ở vòng ngoài).
+    """
+
+    def __init__(self, *, reserve: int, calls: int) -> None:
+        """Dựng tín hiệu từ dự trữ và số lần gọi tối đa của lô chưa chạy."""
+        super().__init__(f"vượt trần token: dự trữ lô {reserve} ({calls} lần gọi)")
+        self.reserve = reserve
+        self.calls = calls
+
+
+def _budget_calls(trajectory_count: int, batch_size: int) -> int:
+    """Số lần gọi mô hình tối đa cho chừng này trajectory.
+
+    Reflector gọi đúng một lần mỗi lô `batch_size` trajectory (E5) nên
+    đây là chặn trên đúng của số lần gọi trong lô; lô rỗng thì 0 lần gọi.
+    """
+    if trajectory_count <= 0:
+        return 0
+    return math.ceil(trajectory_count / batch_size)
+
+
+def _check_token_budget(
+    *,
+    used: int,
+    trajectory_count: int,
+    token_budget_total: int,
+    token_budget_reserve_per_call: int,
+    reflector_batch_size: int,
+) -> None:
+    """Điểm kiểm trần (task 10.4, Phụ lục A.1): kiểm TRƯỚC khi gọi.
+
+    Chỉ kiểm khi `token_budget_total > 0` (`0` = không đặt trần). Dự trữ
+    cho lô = số lần gọi tối đa của lô nhân với dự trữ mỗi lần gọi; đã dùng cộng
+    dự trữ mà vượt trần thì raise `_BudgetExceededError` — chưa phát ra lệnh
+    gọi nào của lô. Chi phí thật mỗi lần gọi ≤ dự trữ theo H1 nên tổng
+    token thật sau lô ≤ đã dùng + dự trữ ≤ trần.
+    """
+    if token_budget_total <= 0:
+        return
+    calls = _budget_calls(trajectory_count, reflector_batch_size)
+    reserve = calls * token_budget_reserve_per_call
+    if used + reserve > token_budget_total:
+        raise _BudgetExceededError(reserve=reserve, calls=calls)
 
 
 @dataclass(frozen=True)
@@ -352,12 +475,28 @@ def _run_chunk(
     reflect: ReflectorFn,
     measures_for: MeasuresFn,
     candidate_id_for: Callable[[], str],
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    token_budget_total: int = 0,
+    token_budget_reserve_per_call: int = 2048,
+    reflector_batch_size: int = 10,
 ) -> _ChunkResult:
     """Xử lý một lô case: Generator replay → Reflector → Curator → Governor → Applier/Promoter.
 
     Đây là thân cũ của `run_learning_round`, tách ra để vòng học chia được
     thành nhiều lô (task 10.3): mỗi lô chạy đúng chuỗi sáu vai như một vòng
     đầy đủ, chỉ khác là chỉ nhận hàng episode của lô đó.
+
+    Trần token (task 10.4): `tokens_in`/`tokens_out` là token đã dùng từ
+    đầu vòng (gồm cả checkpoint resume); điểm kiểm đặt sau `replay`
+    (chưa tốn token nào) và trước `reflect` (lần gọi mô hình đầu tiên
+    của lô) — xem `_check_token_budget`. Lô rỗng thì không gọi mô hình
+    (hành vi cũ giữ nguyên). Server không trả `usage` thì Reflector báo
+    0 token cho lô đó (R2): lô đã gọi mô hình mà báo 0 token thì tính phí
+    xấu nhất bằng dự trữ mỗi lần gọi thay vì 0 — một lần gọi thật không
+    bao giờ tốn 0 token (prompt luôn có nội dung) nên 0 token chỉ có thể
+    là thiếu `usage`. Cache ấm không đổi điểm kiểm: dự trữ vẫn tính như
+    thể sẽ gọi (bảo thủ — dừng sớm hơn chứ không bao giờ vượt).
     """
     events: list[EventRow] = []
     trajectories = replay(tenant_id, list(chunk_rows))
@@ -369,7 +508,22 @@ def _run_chunk(
             payload_hash=payload_hash(chunk_rows),
         )
     )
+    _check_token_budget(
+        used=tokens_in + tokens_out,
+        trajectory_count=len(trajectories),
+        token_budget_total=token_budget_total,
+        token_budget_reserve_per_call=token_budget_reserve_per_call,
+        reflector_batch_size=reflector_batch_size,
+    )
     reflector_result = reflect(trajectories, facts)
+    chunk_tokens_in = reflector_result.tokens_in
+    chunk_tokens_out = reflector_result.tokens_out
+    if token_budget_total > 0 and trajectories and chunk_tokens_in + chunk_tokens_out == 0:
+        # R2: server không trả usage nên Reflector báo 0 token cho lô đã
+        # gọi mô hình — tính phí xấu nhất bằng dự trữ mỗi lần gọi.
+        calls = _budget_calls(len(trajectories), reflector_batch_size)
+        chunk_tokens_in = calls * token_budget_reserve_per_call
+        chunk_tokens_out = 0
     events.append(
         role_call_event(
             tenant_id=tenant_id,
@@ -433,8 +587,8 @@ def _run_chunk(
         fact_rows=tuple(fact_rows),
         fact_closes=tuple(fact_closes),
         events=tuple(events),
-        tokens_in=reflector_result.tokens_in,
-        tokens_out=reflector_result.tokens_out,
+        tokens_in=chunk_tokens_in,
+        tokens_out=chunk_tokens_out,
     )
 
 
@@ -458,6 +612,12 @@ def _check_resume_matches(
     con trỏ phải là đúng đầu danh sách case của vòng (thứ tự case đã đổi
     thì ranh giới lô đổi theo, chạy tiếp sẽ xử lý sai case). Khác một giá
     trị là raise — không chạy tiếp từ checkpoint lạ, không đoán.
+
+    Trần token (task 10.4, Phụ lục A.3): checkpoint có
+    `config_hash_no_budget` thì so hash-trừ-trần thay vì hash toàn phần,
+    và trần mới (đổi hay giữ nguyên) phải `== 0` hoặc `>` token đã dùng
+    mang theo — trần mới ≤ đã dùng thì từ chối ngay; checkpoint cũ thiếu
+    hash-trừ-trần thì dùng luật nghiêm ngặt cũ (hash toàn phần phải khớp).
     """
     mismatches: list[str] = []
     if checkpoint.tenant_id != round.tenant_id:
@@ -469,7 +629,22 @@ def _check_resume_matches(
         or checkpoint.model_revision != round.model_revision
     ):
         mismatches.append("model")
-    if checkpoint.config_hash != round.config_hash:
+    if checkpoint.config_hash_no_budget:
+        # Checkpoint viết từ 10.4 trở đi: so hash-trừ-trần (chứng minh
+        # "chỉ khác trần") thay vì hash toàn phần. Trần mới (đổi hay giữ
+        # nguyên) phải == 0 (tắt) hoặc > số token đã dùng mang theo —
+        # trần mới ≤ đã dùng thì từ chối ngay, không chạy rồi mới chạm
+        # trần lần nữa (Phụ lục A.3); dự trữ mới đổi tự do (chỉ ảnh
+        # hưởng lần kiểm sau).
+        if checkpoint.config_hash_no_budget != round.config_hash_no_budget:
+            mismatches.append("config_hash_no_budget")
+        else:
+            used = checkpoint.tokens_in + checkpoint.tokens_out
+            if round.token_budget_total != 0 and round.token_budget_total <= used:
+                mismatches.append("token_budget_total")
+    elif checkpoint.config_hash != round.config_hash:
+        # Checkpoint viết trước 10.4 (thiếu hash-trừ-trần): luật nghiêm
+        # ngặt cũ — hash toàn phần phải khớp, không cho khác trần.
         mismatches.append("config_hash")
     if checkpoint.data_hash != round.data_hash:
         mismatches.append("data_hash")
@@ -519,6 +694,14 @@ def run_learning_round(
     mới nhất là chạy lại đúng lô dở đó, không quyết lại candidate đã
     quyết. `resume_from` cho sẵn thì bỏ qua các case đã xong, nạp lại
     trạng thái tích lũy + bộ nhớ đệm rồi chạy tiếp các case còn lại.
+
+    Trần token (task 10.4, spec dòng 217): khi `token_budget_total` > 0
+    thì mỗi lô kiểm trần sau `replay`, trước `reflect` (xem
+    `_check_token_budget`); chạm trần thì ghi checkpoint ở ranh giới lô
+    đã xong, thêm event `budget_exceeded`, dựng `RunRow`
+    `status="budget_exceeded"` rồi raise `BudgetExceededError` mang
+    partial outcome để bên gọi ghi `run` và thoát mã 3. Trần > 0 mà
+    không ghi checkpoint thì vòng bị từ chối từ đầu (validation).
     """
     if round.on_test_split:
         check_test_split_lock(
@@ -534,6 +717,27 @@ def run_learning_round(
             "checkpoint_every_n_cases > 0 mà không có checkpoint_store: "
             "không biết ghi checkpoint vào đâu"
         )
+    if round.token_budget_total < 0:
+        raise ValueError("token_budget_total không được âm")
+    if round.token_budget_reserve_per_call < 0:
+        raise ValueError("token_budget_reserve_per_call không được âm")
+    if round.token_budget_total > 0:
+        if round.token_budget_reserve_per_call < 1:
+            raise ValueError(
+                "token_budget_total > 0 mà token_budget_reserve_per_call < 1: "
+                "dự trữ phải ít nhất 1 token cho một lần gọi"
+            )
+        if round.reflector_batch_size < 1:
+            raise ValueError(
+                "token_budget_total > 0 mà reflector_batch_size < 1: "
+                "không tính được số lần gọi tối đa của lô"
+            )
+        if not checkpointing or store is None:
+            raise ValueError(
+                "token_budget_total > 0 mà checkpoint_every_n_cases == 0 hoặc "
+                "không có checkpoint_store: chạm trần thì phải ghi checkpoint "
+                "để chạy tiếp"
+            )
     case_order = _case_order(round.episode_rows)
     trajectories: list[Trajectory] = []
     insights: list[Insight] = []
@@ -544,6 +748,67 @@ def run_learning_round(
     events: list[EventRow] = []
     tokens_in = 0
     tokens_out = 0
+
+    def snapshot() -> Checkpoint:
+        """Checkpoint ở ranh giới lô đã xong: trạng thái tích lũy hiện tại.
+
+        Dùng chung cho checkpoint sau mỗi lô (10.3) và checkpoint ở điểm
+        chạm trần (10.4) — cùng một hình dạng, tránh nhân đôi khối dựng
+        Checkpoint. Không gồm event `budget_exceeded` (event đó chỉ nằm
+        trong outcome, không nằm trong checkpoint — xem nhánh chạm trần).
+        """
+        return Checkpoint(
+            tenant_id=round.tenant_id,
+            seed=round.seed,
+            model_id=round.model_id,
+            model_revision=round.model_revision,
+            config_hash=round.config_hash,
+            data_hash=round.data_hash,
+            cases_done=tuple(done),
+            trajectories=tuple(trajectories),
+            insights=tuple(insights),
+            decisions=tuple(decisions),
+            candidate_ids=tuple(candidate_ids),
+            fact_rows=tuple(fact_rows),
+            fact_closes=tuple(fact_closes),
+            events=tuple(events),
+            cache_entries=(round.cache.export() if round.cache is not None else {}),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            token_budget_total=round.token_budget_total,
+            token_budget_reserve_per_call=round.token_budget_reserve_per_call,
+            config_hash_no_budget=round.config_hash_no_budget,
+        )
+
+    def build_run_row(status: str) -> RunRow:
+        """Hàng `run` với trạng thái tích lũy hiện tại (`succeeded`/`budget_exceeded`)."""
+        return RunRow(
+            tenant_id=round.tenant_id,
+            seed=round.seed,
+            model_id=round.model_id,
+            model_revision=round.model_revision,
+            code_commit=round.code_commit,
+            config_hash=round.config_hash,
+            data_hash=round.data_hash,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            wall_time=round.wall_time,
+            status=status,
+        )
+
+    def build_outcome(run_row: RunRow) -> RoundOutcome:
+        """Outcome từ trạng thái tích lũy hiện tại + hàng `run` đã dựng."""
+        return RoundOutcome(
+            trajectories=tuple(trajectories),
+            insights=tuple(insights),
+            decisions=tuple(decisions),
+            candidate_ids=tuple(candidate_ids),
+            fact_rows=tuple(fact_rows),
+            fact_closes=tuple(fact_closes),
+            events=tuple(events),
+            run_row=run_row,
+        )
+
     if round.resume_from is not None:
         checkpoint = round.resume_from
         _check_resume_matches(round, checkpoint, case_order)
@@ -574,17 +839,66 @@ def run_learning_round(
             chunk_cases = remaining[start : start + chunk_size]
             chunk_set = set(chunk_cases)
             chunk_rows = [row for row in round.episode_rows if row.case_id in chunk_set]
-            chunk = _run_chunk(
-                tenant_id=round.tenant_id,
-                chunk_rows=chunk_rows,
-                facts=round.facts,
-                rule_table=round.rule_table,
-                valid_start=round.valid_start,
-                retired_at=round.retired_at,
-                reflect=reflect,
-                measures_for=measures_for,
-                candidate_id_for=candidate_id_for,
-            )
+            try:
+                chunk = _run_chunk(
+                    tenant_id=round.tenant_id,
+                    chunk_rows=chunk_rows,
+                    facts=round.facts,
+                    rule_table=round.rule_table,
+                    valid_start=round.valid_start,
+                    retired_at=round.retired_at,
+                    reflect=reflect,
+                    measures_for=measures_for,
+                    candidate_id_for=candidate_id_for,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    token_budget_total=round.token_budget_total,
+                    token_budget_reserve_per_call=round.token_budget_reserve_per_call,
+                    reflector_batch_size=round.reflector_batch_size,
+                )
+            except _BudgetExceededError as exc:
+                # Nhánh chạm trần (task 10.4, Phụ lục A.2): lô này chưa chạy
+                # nên không có việc dở — checkpoint ở ranh giới lô đã xong,
+                # event `budget_exceeded`, RunRow `budget_exceeded`, raise
+                # mang partial outcome. Ghi checkpoint lỗi thì vẫn raise
+                # với partial outcome trong bộ nhớ (R4); mất checkpoint
+                # được ghi rõ trong reason của event.
+                try:
+                    assert store is not None  # validation đã từ chối trần không store
+                    checkpoint_key: str | None = write_checkpoint(store, snapshot(), prefix)
+                except Exception:
+                    checkpoint_key = None
+                used = tokens_in + tokens_out
+                reason = (
+                    f"vượt trần token: trần {round.token_budget_total}, đã dùng "
+                    f"{used} (in {tokens_in}, out {tokens_out}), dự trữ lô "
+                    f"{exc.reserve} ({exc.calls} lần gọi), con trỏ "
+                    f"{len(done)} case đã xong"
+                )
+                if checkpoint_key is not None:
+                    reason += f", checkpoint {checkpoint_key}"
+                else:
+                    reason += "; ghi checkpoint thất bại (không có điểm chạy tiếp)"
+                events.append(
+                    role_call_event(
+                        tenant_id=round.tenant_id,
+                        actor="coordinator",
+                        action="budget_exceeded",
+                        payload_hash=payload_hash(
+                            {
+                                "token_budget_total": round.token_budget_total,
+                                "tokens_used": used,
+                                "reserve": exc.reserve,
+                                "cases_done": list(done),
+                            }
+                        ),
+                        reason=reason,
+                    )
+                )
+                raise BudgetExceededError(
+                    outcome=build_outcome(build_run_row("budget_exceeded")),
+                    checkpoint_key=checkpoint_key,
+                ) from exc
             trajectories.extend(chunk.trajectories)
             insights.extend(chunk.insights)
             decisions.extend(chunk.decisions)
@@ -597,49 +911,5 @@ def run_learning_round(
             done.extend(chunk_cases)
             if checkpointing:
                 assert store is not None  # đã từ chối ở đầu hàm
-                write_checkpoint(
-                    store,
-                    Checkpoint(
-                        tenant_id=round.tenant_id,
-                        seed=round.seed,
-                        model_id=round.model_id,
-                        model_revision=round.model_revision,
-                        config_hash=round.config_hash,
-                        data_hash=round.data_hash,
-                        cases_done=tuple(done),
-                        trajectories=tuple(trajectories),
-                        insights=tuple(insights),
-                        decisions=tuple(decisions),
-                        candidate_ids=tuple(candidate_ids),
-                        fact_rows=tuple(fact_rows),
-                        fact_closes=tuple(fact_closes),
-                        events=tuple(events),
-                        cache_entries=(round.cache.export() if round.cache is not None else {}),
-                        tokens_in=tokens_in,
-                        tokens_out=tokens_out,
-                    ),
-                    prefix,
-                )
-    run_row = RunRow(
-        tenant_id=round.tenant_id,
-        seed=round.seed,
-        model_id=round.model_id,
-        model_revision=round.model_revision,
-        code_commit=round.code_commit,
-        config_hash=round.config_hash,
-        data_hash=round.data_hash,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        wall_time=round.wall_time,
-        status="succeeded",
-    )
-    return RoundOutcome(
-        trajectories=tuple(trajectories),
-        insights=tuple(insights),
-        decisions=tuple(decisions),
-        candidate_ids=tuple(candidate_ids),
-        fact_rows=tuple(fact_rows),
-        fact_closes=tuple(fact_closes),
-        events=tuple(events),
-        run_row=run_row,
-    )
+                write_checkpoint(store, snapshot(), prefix)
+    return build_outcome(build_run_row("succeeded"))
