@@ -47,6 +47,7 @@ và vẫn nằm trong ``Policy`` như một giá trị đã khóa.
 
 from __future__ import annotations
 
+import argparse
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -60,13 +61,16 @@ from praxon_core.declare.index import (
     response_holds,
 )
 from praxon_core.declare.miner import Rule, discover
+from praxon_core.eval.ground_truth import ground_truth_from_generator
+from praxon_core.eval.report import split_generated_traces
 from praxon_core.learning.beta import (
     Prior,
     check_prior_invariant,
     posterior_prob_ge,
     prior_prob_ge,
 )
-from praxon_core.learning.rules import Policy
+from praxon_core.learning.rules import Policy, default_rule_table
+from praxon_core.synthetic.generator import GeneratorParams, generate
 
 CALIBRATION_STRENGTHS: tuple[float, ...] = (2.0, 4.0, 6.0)
 """Độ mạnh tiên nghiệm thử khi hiệu chỉnh: ít nhất ba giá trị, tất cả
@@ -322,3 +326,50 @@ def calibrate_beta(
         outcomes=outcomes,
         selected_strength=selected.strength,
     )
+
+
+def format_calibration_table(result: CalibrationResult) -> str:
+    """Bảng hiệu chỉnh: một hàng mỗi độ mạnh (trung vị trace + biên + số lỗi)."""
+    lines = [
+        "Hiệu chỉnh cổng Beta (task 9.6)",
+        "Bộ chuẩn: hạt 42, 300 trace (180 học / 60 hiệu chỉnh / 60 đo)",
+        "độ mạnh | trung vị trace | biên bất biến | lên sai | gỡ sai | lên",
+    ]
+    for outcome in result.outcomes:
+        median = outcome.median_traces_to_promote
+        median_text = f"{median:.1f}" if median is not None else "-"
+        lines.append(
+            f"{outcome.strength:.1f} | {median_text} | {outcome.invariant_margin:.4f} | "
+            f"{outcome.false_promotes} | {outcome.false_retires} | {outcome.promoted}"
+        )
+    lines.append(f"Chọn: {result.selected_strength:.1f}")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Lệnh in bảng hiệu chỉnh: `python -m praxon_core.learning.calibration`.
+
+    Chạy đúng bộ chuẩn của 9.6 (hạt 42, 300 trace) rồi in bảng ba độ mạnh.
+    Không ghi lại tệp cấu hình, không đổi ngưỡng hay mặc định.
+    """
+    parser = argparse.ArgumentParser(
+        prog="praxon_core.learning.calibration",
+        description="In bảng hiệu chỉnh cổng Beta (task 9.6).",
+    )
+    parser.parse_args(argv)
+    log = generate(tenant_id="acme", params=GeneratorParams(seed=42, n_cases=300))
+    train, _test = split_generated_traces(log.traces)
+    calibration = tuple(log.traces[len(train) : len(train) + 60])
+    result = calibrate_beta(
+        split="calibration",
+        train_traces=train,
+        calibration_traces=calibration,
+        ground_truth=ground_truth_from_generator(log).reference,
+        policy=default_rule_table().policy,
+    )
+    print(format_calibration_table(result))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

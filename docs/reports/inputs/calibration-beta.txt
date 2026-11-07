@@ -1,0 +1,7 @@
+Hiệu chỉnh cổng Beta (task 9.6)
+Bộ chuẩn: hạt 42, 300 trace (180 học / 60 hiệu chỉnh / 60 đo)
+độ mạnh | trung vị trace | biên bất biến | lên sai | gỡ sai | lên
+2.0 | 13.0 | 0.2930 | 0 | 0 | 20
+4.0 | 16.0 | 0.1181 | 0 | 0 | 20
+6.0 | 20.0 | 0.0324 | 0 | 0 | 20
+Chọn: 2.0

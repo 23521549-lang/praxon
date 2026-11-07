@@ -1,0 +1,7 @@
+Đường cong khởi động lạnh — tenant acme
+trace | luật | precision | recall | vi phạm | neg.transfer | chế độ
+    0 |    0 | 0.000 | 0.000 | 0.000 | 0.000 | trial (giám sát)
+    5 |   20 | 1.000 | 0.357 | 0.050 | 0.000 | active
+   10 |   20 | 1.000 | 0.357 | 0.050 | 0.000 | active
+   20 |   20 | 1.000 | 0.357 | 0.050 | 0.000 | active
+   40 |   20 | 1.000 | 0.357 | 0.050 | 0.000 | active

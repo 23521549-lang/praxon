@@ -1,0 +1,21 @@
+Đô thị 1: 1199 case → học 719, hiệu chỉnh 240, đo 240
+  ranh giới: học tới 2012-12-06, đo từ 2014-02-18
+  tệp sha256: 7591f70d4a4d536ead76a56c2fa493fbe22bf2ec7e06c8ddd29da79bd666e516
+  data_hash: a38645fb3f1797579f61f9ea327a1f0bac570921621de5bb0310f4a666792620
+Đô thị 2: 832 case → học 499, hiệu chỉnh 166, đo 167
+  ranh giới: học tới 2012-12-24, đo từ 2014-02-28
+  tệp sha256: fd7704bd3c473afe04cf003ea3220a24d6dcd521fa6c639fb8475dd0826201a6
+  data_hash: 700c9125bc80af4a221b3f75bcb2b35b445ee3099d580c6dc9baf178cf2f4405
+Đô thị 3: 1409 case → học 846, hiệu chỉnh 281, đo 282
+  ranh giới: học tới 2013-03-06, đo từ 2014-02-28
+  tệp sha256: 920985874a9ccba1f86aba138e796a4ce9a37f06f90d311fcb4c27dfca7dd6b7
+  data_hash: fa192b02bfd9cf62dfe3d4f86225fa1cedc4bc145c526e27cd25956d0130df03
+Đô thị 4: 1053 case → học 631, hiệu chỉnh 211, đo 211
+  ranh giới: học tới 2013-04-22, đo từ 2014-04-11
+  tệp sha256: f508c083b972821de17d47a335f0905d108f1b9654a4db0aed9dc8c4ef8f0494
+  data_hash: f7143b4858287009267acf279546df32eb01081843abae5efc6ef4f573b02d79
+Đô thị 5: 1156 case → học 694, hiệu chỉnh 230, đo 232
+  ranh giới: học tới 2013-02-19, đo từ 2014-03-17
+  tệp sha256: 48ca302b19b5aa4964cd85b67a306e484655159ab2b55cf3c487ee7eb66d51ed
+  data_hash: 54f83c88e9ab355ffae1d68521af72725b726717df6af6e628ecc8933d8e93de
+data_hash chung (cả năm đô thị): 0edb706dcf2afb637a0c7b57ee9d284fc8958ee50b9594a05e3365ec5a805b92
