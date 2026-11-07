@@ -186,6 +186,11 @@ def condition_fact_sets(
     Trả dict điều kiện → dict tenant → fact. Điều kiện 7 không có ở đây:
     nó cần số đo của điều kiện 5 và 6 để chọn ứng viên tốt hơn, cộng
     luật tài liệu (xem `run_experiments`).
+
+    Không phụ thuộc nguồn dữ liệu: chỉ đọc `tenant_id`, `train_traces`
+    và `own_rules` của từng tenant, nên dùng được cho cả tenant giả lẫn
+    đô thị BPIC (miễn `own_rules` đã khám phá trên chính trace học đó) —
+    11.2 tái dùng nguyên hàm này cho cả hai nguồn mà không đổi chữ ký.
     """
     by_key = _rule_by_key([tenant.own_rules for tenant in tenants])
     own_facts = {
