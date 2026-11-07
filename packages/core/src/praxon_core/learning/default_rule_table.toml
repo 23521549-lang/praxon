@@ -7,7 +7,7 @@
 confidence_threshold = 0.7
 promote_probability = 0.95
 retire_probability = 0.05
-prior_strength_default = 4
+prior_strength_default = 2
 min_matching_cases = 30
 
 [[rules]]

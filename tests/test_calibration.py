@@ -200,5 +200,5 @@ def test_nguong_chinh_sach_mac_dinh():
     assert policy.confidence_threshold == 0.7
     assert policy.promote_probability == 0.95
     assert policy.retire_probability == 0.05
-    assert policy.prior_strength_default == 4.0
+    assert policy.prior_strength_default == 2.0
     assert policy.min_matching_cases == 30
