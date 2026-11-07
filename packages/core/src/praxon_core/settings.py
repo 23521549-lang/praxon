@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 ENV_PREFIX = "PRAXON_"
 
@@ -171,6 +171,29 @@ class Settings(BaseModel):
     không bao giờ ghi vào tệp TOML commit lên kho — giống `openai_api_key`
     (task 6.1). Xoay khóa không đổi `config_hash` (xem
     `coordinator.compute_config_hash`).
+    """
+
+    token_budget_total: int = Field(default=0, ge=0)
+    """Trần token của một vòng học (task 10.4, spec dòng 217).
+
+    Đếm tổng `tokens_in + tokens_out` của cả vòng; `0` nghĩa là không đặt
+    trần (giữ đúng hành vi hiện tại). Trần là số cấu hình duy nhất của
+    vòng — không có trần riêng cho vào/ra. Đổi trần thì đổi `config_hash`
+    (trần đổi kết quả chạy nên phải đổi hash — xem
+    `coordinator.compute_config_hash`). Ghi đè trong tệp TOML hoặc biến
+    môi trường `PRAXON_TOKEN_BUDGET_TOTAL` khi cần.
+    """
+
+    token_budget_reserve_per_call: int = Field(default=2048, ge=0)
+    """Dự trữ token cho một lần gọi mô hình (task 10.4, spec dòng 217).
+
+    Trước mỗi lô Reflector, bộ điều phối dự trữ số lần gọi tối đa của lô
+    nhân với số này; tổng đã dùng cộng dự trữ mà vượt trần thì dừng trước
+    khi gọi. Mặc định 2048 = `ctx-size` của server triển khai (lệnh chạy
+    9.1) — chặn trên của một lần gọi thành công (prompt + đầu ra không
+    vượt cửa sổ context). Nếu server đổi `ctx-size` thì dự trữ phải đổi
+    theo. Ghi đè trong tệp TOML hoặc biến môi trường
+    `PRAXON_TOKEN_BUDGET_RESERVE_PER_CALL` khi cần.
     """
 
 

@@ -27,12 +27,14 @@ from praxon_core.learning.checkpoint import (
     read_latest_checkpoint,
 )
 from praxon_core.learning.coordinator import (
+    BudgetExceededError,
     LearningRound,
     ReflectorFn,
     ReflectorResult,
     RoundOutcome,
     check_test_split_lock,
     compute_config_hash,
+    compute_config_hash_without_budget,
     is_reproducible,
     merge_data_hash,
     reproducibility_gaps,
@@ -545,6 +547,10 @@ def _round_cases(
     checkpoint_store: CheckpointStore | None = None,
     resume_from: Checkpoint | None = None,
     cache: ResponseCache | None = None,
+    token_budget_total: int = 0,
+    token_budget_reserve_per_call: int = 2048,
+    reflector_batch_size: int = 10,
+    config_hash_no_budget: str = "",
 ) -> LearningRound:
     rows = []
     for index, (case_id, activities) in enumerate(cases):
@@ -570,6 +576,10 @@ def _round_cases(
         checkpoint_store=checkpoint_store,
         resume_from=resume_from,
         cache=cache,
+        token_budget_total=token_budget_total,
+        token_budget_reserve_per_call=token_budget_reserve_per_call,
+        reflector_batch_size=reflector_batch_size,
+        config_hash_no_budget=config_hash_no_budget,
     )
 
 
@@ -871,3 +881,326 @@ def test_run_learning_round_resume_nap_lai_cache(tmp_path):
         == "phan-hoi"
     )
     assert model.calls == 4
+
+
+# --- Trần token (task 10.4) ---
+
+
+def _reflector_khong_usage(calls: list[str]) -> ReflectorFn:
+    """Reflector giả mô phỏng server không trả `usage`: 0 token mọi lô."""
+
+    def reflect(
+        trajectories: Sequence[Trajectory], facts: Sequence[FactRead]
+    ) -> ReflectorResult:
+        calls.extend(t.case_id for t in trajectories)
+        return ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
+
+    return reflect
+
+
+def test_budget_du_cho_lo_1_khong_du_cho_lo_2(tmp_path):
+    # Trần 15, dự trữ 10/lần gọi: lô 1 qua (0 + 10 <= 15), lô 2 chạm
+    # (6 + 10 > 15) — không lệnh gọi nào của lô 2 được phát ra.
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    seen: list[str] = []
+    with pytest.raises(BudgetExceededError) as exc_info:
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=store,
+                token_budget_total=15,
+                token_budget_reserve_per_call=10,
+            ),
+            reflect=_reflect_by_trajectory(seen=seen),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    error = exc_info.value
+    outcome = error.outcome
+    assert outcome.run_row.status == "budget_exceeded"
+    assert (outcome.run_row.tokens_in, outcome.run_row.tokens_out) == (2, 4)
+    # Reflector chỉ thấy lô 1; partial outcome chỉ tới hết lô 1.
+    assert seen == ["c1", "c2"]
+    assert len(outcome.decisions) == 2
+    assert [row.canonical_key for row in outcome.fact_rows] == [
+        "response(A, B)",
+        "response(C, D)",
+    ]
+    # Checkpoint ở ranh giới lô đã xong (2 case), event budget_exceeded kèm theo.
+    prefix = _prefix()
+    assert store.list_keys(prefix) == [prefix + "/000002.json"]
+    assert error.checkpoint_key == prefix + "/000002.json"
+    latest = read_latest_checkpoint(store, prefix)
+    assert latest is not None
+    assert latest.cases_done == ("c1", "c2")
+    assert latest.tokens_in == 2
+    budget_events = [e for e in outcome.events if e.action == "budget_exceeded"]
+    assert len(budget_events) == 1
+    assert budget_events[0].actor == "coordinator"
+    assert "15" in (budget_events[0].reason or "")
+    assert "000002.json" in (budget_events[0].reason or "")
+
+
+def test_budget_ranh_gioi_bang_tran_thi_qua(tmp_path):
+    # Đã dùng + dự trữ == trần thì qua (chỉ > trần mới chạm).
+    outcome = run_learning_round(
+        _round_cases(
+            checkpoint_every_n_cases=2,
+            checkpoint_store=LocalCheckpointStore(tmp_path / "ckp"),
+            token_budget_total=16,
+            token_budget_reserve_per_call=10,
+        ),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert (outcome.run_row.tokens_in, outcome.run_row.tokens_out) == (4, 8)
+
+
+def test_budget_0_mac_dinh_chay_het(tmp_path):
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    outcome = run_learning_round(
+        _round_cases(checkpoint_every_n_cases=2, checkpoint_store=store),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert (outcome.run_row.tokens_in, outcome.run_row.tokens_out) == (4, 8)
+
+
+def test_budget_nho_hon_du_tru_lo_dau_cham_ngay(tmp_path):
+    # Trần 5 < dự trữ 10 của lô đầu: chạm ngay với 0 token đã dùng.
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    seen: list[str] = []
+    with pytest.raises(BudgetExceededError) as exc_info:
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=store,
+                token_budget_total=5,
+                token_budget_reserve_per_call=10,
+            ),
+            reflect=_reflect_by_trajectory(seen=seen),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    error = exc_info.value
+    assert error.outcome.run_row.status == "budget_exceeded"
+    assert (error.outcome.run_row.tokens_in, error.outcome.run_row.tokens_out) == (0, 0)
+    assert seen == []
+    prefix = _prefix()
+    assert error.checkpoint_key == prefix + "/000000.json"
+    latest = read_latest_checkpoint(store, prefix)
+    assert latest is not None
+    assert latest.cases_done == ()
+
+
+def test_usage_none_tinh_phi_bang_du_tru(tmp_path):
+    # Server không trả usage: lô báo 0 token thì tính phí bằng dự trữ
+    # mỗi lần gọi (R2) — trần vẫn chạm đúng lúc.
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    calls: list[str] = []
+    with pytest.raises(BudgetExceededError) as exc_info:
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=store,
+                token_budget_total=15,
+                token_budget_reserve_per_call=10,
+            ),
+            reflect=_reflector_khong_usage(calls),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    error = exc_info.value
+    # Lô 1: 0 token báo về → tính phí 1 lần gọi nhân 10 = 10; lô 2:
+    # 10 + 10 > 15 nên chạm. Reflector chỉ gọi đúng 1 lần (lô 1).
+    assert (error.outcome.run_row.tokens_in, error.outcome.run_row.tokens_out) == (10, 0)
+    assert calls == ["c1", "c2"]
+
+
+def test_cache_am_khong_goi_moi_nhung_van_tinh_du_tru(tmp_path):
+    # Cache ấm: không phát ra lệnh gọi mới, nhưng điểm kiểm vẫn tính dự
+    # trữ như thể sẽ gọi (bảo thủ — dừng sớm hơn chứ không bao giờ vượt).
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    cache = ResponseCache()
+    model = _CountingModel()
+    for case_id in ("c1", "c2", "c3", "c4"):
+        cache.get_or_call(
+            f"reflect:{case_id}",
+            model_revision=MODEL_REVISION,
+            decode_params={},
+            json_schema={},
+            call=model,
+        )
+    assert model.calls == 4
+    with pytest.raises(BudgetExceededError):
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=store,
+                cache=cache,
+                token_budget_total=15,
+                token_budget_reserve_per_call=10,
+            ),
+            reflect=_reflect_by_trajectory(cache=cache, model=model),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    assert model.calls == 4
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"token_budget_total": -1},
+        {"token_budget_reserve_per_call": -1},
+        {"token_budget_total": 10, "token_budget_reserve_per_call": 0},
+        {"token_budget_total": 10, "reflector_batch_size": 0},
+        {"token_budget_total": 10, "checkpoint_every_n_cases": 0},
+        {
+            "token_budget_total": 10,
+            "checkpoint_every_n_cases": 2,
+            "checkpoint_store": None,
+        },
+    ],
+)
+def test_budget_validation_dau_vong_tu_choi_truoc_khi_chay(overrides):
+    seen: list[str] = []
+    with pytest.raises(ValueError):
+        run_learning_round(
+            _round_cases(**overrides),
+            reflect=_reflect_by_trajectory(seen=seen),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    assert seen == []
+
+
+def test_config_hash_doi_khi_doi_tran_nhung_hash_tru_tran_khong_doi():
+    settings = Settings(database_url="postgresql://localhost/praxon")
+    nang_tran = settings.model_copy(update={"token_budget_total": 5000})
+    assert compute_config_hash(nang_tran) != compute_config_hash(settings)
+    assert compute_config_hash_without_budget(nang_tran) == compute_config_hash_without_budget(
+        settings
+    )
+    doi_model = settings.model_copy(update={"model_id": "model-khac"})
+    assert compute_config_hash_without_budget(doi_model) != compute_config_hash_without_budget(
+        settings
+    )
+
+
+def test_resume_nang_tran_cho_phep(tmp_path):
+    # Checkpoint ở điểm chạm trần (trần 100, đã dùng 12); vòng mới nâng
+    # trần lên 1000 (dự trữ đổi 10 → 20 cũng được phép) thì chạy tiếp.
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    shared_ids = _candidate_ids()
+    seen: list[str] = []
+    checkpoint = _checkpoint_for_resume(
+        cases_done=("c1", "c2"),
+        tokens_in=4,
+        tokens_out=8,
+        token_budget_total=100,
+        token_budget_reserve_per_call=10,
+        config_hash_no_budget="n" * 64,
+    )
+    resumed = run_learning_round(
+        _round_cases(
+            checkpoint_every_n_cases=2,
+            checkpoint_store=store,
+            resume_from=checkpoint,
+            token_budget_total=1000,
+            token_budget_reserve_per_call=20,
+            config_hash_no_budget="n" * 64,
+        ),
+        reflect=_reflect_by_trajectory(seen=seen),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=shared_ids,
+    )
+    assert seen == ["c3", "c4"]
+    assert resumed.run_row.status == "succeeded"
+    assert (resumed.run_row.tokens_in, resumed.run_row.tokens_out) == (6, 12)
+
+
+def test_resume_giu_nguyen_tran_khi_da_dung_het_thi_tu_choi(tmp_path):
+    # Trần giữ nguyên 12 mà đã dùng đúng 12 token: trần mới không > đã
+    # dùng nên cổng resume từ chối ngay, trước khi gọi mô hình.
+    checkpoint = _checkpoint_for_resume(
+        cases_done=("c1", "c2"),
+        tokens_in=4,
+        tokens_out=8,
+        token_budget_total=12,
+        token_budget_reserve_per_call=10,
+        config_hash_no_budget="n" * 64,
+    )
+    seen: list[str] = []
+    with pytest.raises(ValueError, match="không thuộc về vòng này"):
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=LocalCheckpointStore(tmp_path / "ckp"),
+                resume_from=checkpoint,
+                token_budget_total=12,
+                token_budget_reserve_per_call=10,
+                config_hash_no_budget="n" * 64,
+            ),
+            reflect=_reflect_by_trajectory(seen=seen),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    assert seen == []
+
+
+def test_resume_doi_seed_du_nang_tran_van_tu_choi(tmp_path):
+    checkpoint = _checkpoint_for_resume(
+        seed=43,
+        cases_done=("c1", "c2"),
+        tokens_in=4,
+        tokens_out=8,
+        token_budget_total=100,
+        token_budget_reserve_per_call=10,
+        config_hash_no_budget="n" * 64,
+    )
+    with pytest.raises(ValueError, match="không thuộc về vòng này"):
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=LocalCheckpointStore(tmp_path / "ckp"),
+                resume_from=checkpoint,
+                token_budget_total=1000,
+                token_budget_reserve_per_call=10,
+                config_hash_no_budget="n" * 64,
+            ),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+
+
+def test_resume_checkpoint_cu_thieu_hash_tru_tran_voi_tran_khac_thi_tu_choi(tmp_path):
+    # Checkpoint viết trước 10.4 (thiếu config_hash_no_budget): luật
+    # nghiêm ngặt cũ — hash toàn phần khác thì từ chối dù trần mới cao hơn.
+    checkpoint = _checkpoint_for_resume(
+        config_hash="0" * 64,
+        cases_done=("c1", "c2"),
+        tokens_in=4,
+        tokens_out=8,
+        token_budget_total=1000,
+        token_budget_reserve_per_call=10,
+    )
+    with pytest.raises(ValueError, match="không thuộc về vòng này"):
+        run_learning_round(
+            _round_cases(
+                checkpoint_every_n_cases=2,
+                checkpoint_store=LocalCheckpointStore(tmp_path / "ckp"),
+                resume_from=checkpoint,
+                token_budget_total=1000,
+                token_budget_reserve_per_call=10,
+                config_hash_no_budget="n" * 64,
+            ),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )

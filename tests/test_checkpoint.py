@@ -392,3 +392,61 @@ def test_s3_store_ghi_doc_checkpoint_dang_day_du(s3_store):
     key = write_checkpoint(s3_store, checkpoint, prefix)
     assert read_checkpoint(s3_store, key) == checkpoint
     assert read_latest_checkpoint(s3_store, prefix) == checkpoint
+
+
+def test_checkpoint_mac_dinh_tran_token_va_hash_tru_tran():
+    # Task 10.4: mặc định = checkpoint viết trước 10.4 (chưa có trần /
+    # chưa có hash-trừ-trần).
+    checkpoint = Checkpoint(
+        tenant_id="acme",
+        seed=42,
+        model_id="m",
+        model_revision="r",
+        config_hash=CONFIG_HASH,
+        data_hash=DATA_HASH,
+    )
+    assert checkpoint.token_budget_total == 0
+    assert checkpoint.token_budget_reserve_per_call == 0
+    assert checkpoint.config_hash_no_budget == ""
+
+
+def test_read_checkpoint_cu_thieu_ba_truong_moi_nhan_mac_dinh():
+    # Checkpoint v1 viết trước 10.4 thiếu ba trường mới: đọc ra nhận
+    # mặc định 0/0/"" (không từ chối, không đoán).
+    store = MemoryStore()
+    old = {
+        "version": 1,
+        "tenant_id": "acme",
+        "seed": 42,
+        "model_id": "m",
+        "model_revision": "r",
+        "config_hash": CONFIG_HASH,
+        "data_hash": DATA_HASH,
+        "cases_done": ["c1", "c2"],
+        "tokens_in": 4,
+        "tokens_out": 8,
+    }
+    store.put(_prefix() + "/000002.json", json.dumps(old).encode("utf-8"))
+    checkpoint = read_checkpoint(store, _prefix() + "/000002.json")
+    assert checkpoint.cases_done == ("c1", "c2")
+    assert (checkpoint.tokens_in, checkpoint.tokens_out) == (4, 8)
+    assert checkpoint.token_budget_total == 0
+    assert checkpoint.token_budget_reserve_per_call == 0
+    assert checkpoint.config_hash_no_budget == ""
+
+
+def test_write_read_round_trip_giu_nguyen_tran_token():
+    store = MemoryStore()
+    checkpoint = _sample_checkpoint().model_copy(
+        update={
+            "token_budget_total": 100,
+            "token_budget_reserve_per_call": 2048,
+            "config_hash_no_budget": "n" * 64,
+        }
+    )
+    key = write_checkpoint(store, checkpoint, _prefix())
+    read = read_checkpoint(store, key)
+    assert read == checkpoint
+    assert read.token_budget_total == 100
+    assert read.token_budget_reserve_per_call == 2048
+    assert read.config_hash_no_budget == "n" * 64
