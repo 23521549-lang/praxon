@@ -233,7 +233,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | 9.4 | Rubric duyệt viết trước, khóa bằng commit; duyệt chéo mù một phần năm quyết định thủ công | Rubric có mã commit trước quyết định thủ công đầu tiên; lệnh tính kappa, ngưỡng ≥ 0,61 | xong | chưa review |
 | 9.5 | Kiểm điều kiện thuộc tính phân loại trên loại matching của BPIC 2019 | Lệnh in số case trong phần thỏa điều kiện; dưới 30 case thì loại theo luật 7 | chưa làm | chưa review |
 | 9.6 | Hiệu chỉnh 0,7; 0,95; 0,05; độ mạnh tiên nghiệm; phần tối thiểu 30 case — chỉ trên phần hiệu chỉnh | Test: bộ điều phối từ chối hiệu chỉnh trên phần đo; độ mạnh tiên nghiệm thử ít nhất ba giá trị, tất cả trong vùng bất biến cho phép | chưa làm | chưa review |
-| 9.7 | Biên bản kiểm cầu dao 50% | Văn bản ở `docs/plans/phase-1-core/`: đã xong bao nhiêu phần việc cốt lõi, cắt gì nếu chưa đạt | chưa làm | chưa review |
+| 9.7 | Biên bản kiểm cầu dao 50% | Văn bản ở `docs/plans/phase-1-core/`: đã xong bao nhiêu phần việc cốt lõi, cắt gì nếu chưa đạt | xong | chưa review |
 
 **Review plan con 9** — ngày: · người review: · kết luận:
 
