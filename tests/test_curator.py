@@ -170,7 +170,9 @@ def test_dieu_kien_khac_nhau_la_khoa_khac_nhau():
 
 def test_to_candidate_add_mang_du_thong_tin():
     candidate = to_candidate(curate(_insight(), [])[0], valid_start=VALID_START)
-    assert candidate.target_scope == "acme"
+    # Insight mang tên tenant "acme" — to_candidate ánh xạ về 'tenant'
+    # (DB chỉ nhận 'tenant'/'global'); danh tính tenant ở tenant_id.
+    assert candidate.target_scope == "tenant"
     assert candidate.status == "pending"
     assert candidate.payload["kind"] == "add"
     assert candidate.payload["canonical_key"] == "response(A, B)"
@@ -183,6 +185,13 @@ def test_to_candidate_add_mang_du_thong_tin():
     assert candidate.evidence_episode_ids == ["e1", "e2"]
     assert candidate.rule_id is None
     assert candidate.decided_by is None
+
+
+def test_to_candidate_anh_xa_target_scope_ve_tenant_hoac_global():
+    """to_candidate ánh xạ scope Insight về 'tenant'/'global' (DB chỉ nhận hai giá trị)."""
+    for scope, expected in (("global", "global"), ("acme", "tenant"), ("tenant", "tenant")):
+        candidate = to_candidate(curate(_insight(scope=scope), [])[0], valid_start=VALID_START)
+        assert candidate.target_scope == expected
 
 
 def test_to_candidate_contradict_mang_fact_bi_tac_dong():
