@@ -4,10 +4,11 @@
 → ghi candidate xuống DB qua curator/governor → promote_candidate →
 insert_fact qua promoter → đọc lại fact. Đường global (Insight
 scope="global") — toàn bộ chuỗi chạy thông tới DB, chứng minh khoảng trống
-payload đã đóng. Đường tenant qua apply_candidate + INSERT candidate bị
-chặn bởi lệch tên scope (to_candidate đặt target_scope = tên tenant, DB
-chỉ nhận 'tenant'/'global') — khoảng trống riêng, task riêng; đường tenant
-kiểm tới build_fact_row ở test thuần (tests/test_payload.py).
+payload đã đóng. Đường tenant qua apply_candidate + INSERT candidate từng bị chặn bởi
+lệch tên scope (to_candidate đặt target_scope = tên tenant, DB chỉ
+nhận 'tenant'/'global') — đã sửa bằng ánh xạ ở to_candidate
+('global' → 'global', tên tenant → 'tenant'); test
+test_chuoi_tenant_thong_toi_db chứng minh đường tenant chạy thông tới DB.
 
 Task P mở rộng chuỗi cho RETIRE/CONTRADICT/CONFIRM: Insight đối nghịch +
 fact trial → RETIRE (Governor needs_human luật 1, người duyệt rồi đóng
@@ -25,7 +26,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from praxon_core.learning.applier import build_fact_close, promote_candidate
+from praxon_core.learning.applier import (
+    apply_candidate,
+    build_fact_close,
+    promote_candidate,
+)
 from praxon_core.learning.candidate import Candidate, DecisionVerdict, FactStatus
 from praxon_core.learning.curator import (
     DeltaKind,
@@ -58,7 +63,13 @@ def _approve_candidate(candidate: Candidate) -> tuple[str, Candidate]:
         conn.execute(
             "INSERT INTO candidate (id, tenant_id, target_scope, payload, rationale) "
             "VALUES (%s, %s, %s, %s::jsonb, %s)",
-            (candidate_id, "acme", "global", json.dumps(candidate.payload), "test"),
+            (
+                candidate_id,
+                "acme",
+                candidate.target_scope,
+                json.dumps(candidate.payload),
+                "test",
+            ),
         )
     with as_role("acme__governor") as conn:
         conn.execute("UPDATE candidate SET status = 'approved' WHERE id = %s", (candidate_id,))
@@ -311,3 +322,60 @@ def test_chuoi_confirm_khong_them_fact(pg: None) -> None:
             (f"response({act}, {tgt})",),
         )
     assert count == 1
+
+
+def test_chuoi_tenant_thong_toi_db(pg: None) -> None:
+    """Chuỗi tenant: Insight mang tên tenant → áp qua applier → fact scope 'tenant'.
+
+    Trước khi sửa, đường này vỡ ở INSERT candidate (to_candidate đặt
+    target_scope = tên tenant, CHECK của DB từ chối); nay chạy thông tới DB.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    act, tgt = f"A-{suffix}", f"B-{suffix}"
+    insight = Insight(
+        template="response",
+        activation=act,
+        target=tgt,
+        condition=None,
+        evidence_episode_ids=[EPISODE_ID],
+        source=InsightSource.TRACE,
+        scope="acme",
+    )
+    deltas = curate(insight, [])
+    assert [d.kind for d in deltas] == [DeltaKind.ADD]
+    candidate = to_candidate(deltas[0], valid_start=VALID_START)
+    # to_candidate ánh xạ tên tenant về 'tenant' (DB chỉ nhận 'tenant'/'global').
+    assert candidate.target_scope == "tenant"
+    FactPayload.model_validate(candidate.payload)
+    result = decide(
+        candidate,
+        default_rule_table(),
+        _measures(has_direct_conflict=False, fact_status=None, is_new=True),
+    )
+    assert result.decision.verdict is DecisionVerdict.AUTO_APPROVE
+    assert result.decision.rule_id == 2
+    candidate_id, approved = _approve_candidate(candidate)
+    with as_role("acme__applier") as conn:
+        assert insert_fact(
+            conn, apply_candidate(approved, candidate_id=candidate_id, tenant_id="acme")
+        )
+    with as_role("acme__reader") as conn:
+        row = one(
+            conn,
+            "SELECT tenant_id, scope, canonical_key, template, statement, status, "
+            "support, confidence, candidate_id, lower(valid_during) "
+            "FROM fact WHERE candidate_id = %s",
+            (candidate_id,),
+        )
+    assert row[:8] == (
+        "acme",
+        "tenant",
+        f"response({act}, {tgt})",
+        "response",
+        f"{act} response {tgt}",
+        "trial",
+        0,
+        0.0,
+    )
+    assert str(row[8]) == candidate_id
+    assert row[9] == VALID_START

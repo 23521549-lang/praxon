@@ -211,12 +211,17 @@ def to_candidate(
 ) -> Candidate:
     """Một Delta thành Candidate cho Governor (spec dòng 77).
 
-    `target_scope` lấy từ phạm vi của Insight; `payload` là các trường fact
-    theo hợp đồng chung `FactPayload` (mô hình `learning/payload.py`) để
-    Applier đọc đúng các trường này khi ghi fact. `status` ban đầu là
-    `pending`. `support`/`confidence` để mặc định 0/0.0 — Curator chưa có
-    số liệu này (Insight không mang support/confidence); khi có số liệu
-    (từ Measures/beta) thì bổ sung sau.
+    `target_scope` là phạm vi DB của candidate: chỉ hai giá trị
+    `'tenant'`/`'global'` (CHECK ở V1) — `'global'` khi Insight nhắm
+    `global`, mọi phạm vi khác (tên tenant, hoặc chữ `'tenant'`) đều
+    thành `'tenant'`. Danh tính tenant không nằm ở đây mà ở `tenant_id`
+    (coordinator truyền riêng lúc INSERT/áp), nên ánh xạ không mất
+    thông tin. `payload` là các trường fact theo hợp đồng chung
+    `FactPayload` (mô hình `learning/payload.py`) để Applier đọc đúng
+    các trường này khi ghi fact. `status` ban đầu là `pending`.
+    `support`/`confidence` để mặc định 0/0.0 — Curator chưa có số liệu
+    này (Insight không mang support/confidence); khi có số liệu (từ
+    Measures/beta) thì bổ sung sau.
 
     `valid_start` (đầu khoảng hiệu lực `valid_during`) do coordinator
     truyền vào — hàm thuần không tự lấy giờ. TRACE: thời điểm Governor
@@ -252,7 +257,7 @@ def to_candidate(
         fact_id=fact.id if fact is not None else None,
     )
     return Candidate(
-        target_scope=insight.scope,
+        target_scope="global" if insight.scope == "global" else "tenant",
         payload=payload.model_dump(mode="json"),
         rationale=delta.rationale,
         evidence_episode_ids=list(insight.evidence_episode_ids),

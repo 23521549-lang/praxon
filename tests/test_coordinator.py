@@ -429,14 +429,23 @@ def test_run_learning_round_contradict_dong_cu_them_moi(tmp_path):
     assert outcome.fact_rows[0].candidate_id == "candidate-0"
 
 
-def test_run_learning_round_scope_ten_tenant_thi_tu_choi():
-    with pytest.raises(ValueError, match="chưa có ánh xạ"):
-        run_learning_round(
-            _round(),
-            reflect=_reflector([_insight("response", "A", "B", "acme")]),
-            measures_for=lambda candidate, delta: _measures(),
-            candidate_id_for=_candidate_ids(),
-        )
+def test_run_learning_round_scope_ten_tenant_thi_anh_xa_ve_tenant():
+    # Hành vi cũ (raise ValueError vì scope "acme" chưa có ánh xạ) đã bị
+    # thay bằng map ở `to_candidate` (target_scope: "acme" -> "tenant",
+    # theo đề xuất target_scope đã duyệt): vòng học chạy thông, fact row
+    # mang scope 'tenant' + tenant_id của vòng. Nhánh `else` của
+    # coordinator giữ nguyên làm lưới an toàn phòng thủ.
+    outcome = run_learning_round(
+        _round(),
+        reflect=_reflector([_insight("response", "A", "B", "acme")]),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert len(outcome.fact_rows) == 1
+    fact_row = outcome.fact_rows[0]
+    assert fact_row.scope == "tenant"
+    assert fact_row.tenant_id == "acme"
 
 
 def test_run_learning_round_khoa_phan_do_tu_choi_truoc_khi_chay():
