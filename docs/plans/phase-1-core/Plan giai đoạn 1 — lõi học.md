@@ -304,7 +304,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | # | Task | Cổng ra kiểm bằng máy | Trạng thái | Review |
 | --- | --- | --- | --- | --- |
 | 13.1 | Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu, in bốn chỉ số và bản ghi lần chạy | Lệnh chạy từ máy trống qua compose; chạy lại ra đúng kết quả | xong | chưa review |
-| 13.2 | Báo cáo kết quả giai đoạn 1 | Mọi số trong báo cáo sinh được bằng lệnh, không chép tay | chưa làm | chưa review |
+| 13.2 | Báo cáo kết quả giai đoạn 1 | Mọi số trong báo cáo sinh được bằng lệnh, không chép tay | xong | chưa review |
 | 13.3 | Báo cáo cổng 1 | Sáu điều kiện cổng, mỗi điều kiện một phép thử hoặc một con số | chưa làm | chưa review |
 | 13.4 | Spec giai đoạn 2a cho tuần nghỉ 30/11 – 6/12 | Spec qua cổng spec của giai đoạn 2a | chưa làm | chưa review |
 
