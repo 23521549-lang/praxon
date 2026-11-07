@@ -51,16 +51,16 @@ jobs:
       - name: Cài hai gói ở chế độ editable
         run: python -m pip install -e packages/core -e packages/platform
 
-      - name: Cache dữ liệu BPIC 2015 (M1)
+      - name: Cache dữ liệu BPIC 2015 (M1–M5)
         uses: actions/cache@v4
         with:
           path: ~/.cache/praxon/bpic2015
-          key: bpic2015-m1-6c8a04d566eef571cf0aaf7b6f70310b
+          key: bpic2015-all-6c8a04d566eef571cf0aaf7b6f70310b-f271dc579cee2c067bf2d8d2b8b45162-7fee0bd0bfb8169cb2f91f2c77d2598e-fac8a0d1d7ee074c2780bc75b9154c6a-25fbd274fa1cd1c447bab98e22816359
 
-      - name: Lấy dữ liệu BPIC 2015 (M1) cho test đo thật
+      - name: Lấy dữ liệu BPIC 2015 (M1–M5) cho test đo thật
         env:
           PRAXON_BPIC2015_FALLBACK_URL: ${{ vars.PRAXON_BPIC2015_FALLBACK_URL }}
-        run: python -m tools.ci_fetch_bpic2015 --dataset m1
+        run: python -m tools.ci_fetch_bpic2015 --dataset all
 
       - name: Cổng — phiên bản công cụ khớp bản ghim
         run: python -m tools.check_tool_versions
