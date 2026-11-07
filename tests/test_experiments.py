@@ -6,6 +6,8 @@ chuẩn bán tổng hợp, in bốn chỉ số theo tenant cho cả bảy điề
 
 from __future__ import annotations
 
+from praxon_core.declare.index import Trace
+from praxon_core.declare.miner import discover
 from praxon_core.eval.experiments import (
     CONDITIONS,
     CONSENSUS,
@@ -16,11 +18,17 @@ from praxon_core.eval.experiments import (
     VETO,
     VOTE_K,
     VOTING,
+    TenantData,
     _tenant_data,
     condition_fact_sets,
     format_experiments_report,
     main,
     run_experiments,
+)
+from praxon_core.eval.ground_truth import (
+    GROUND_TRUTH_CONFIDENCE,
+    GROUND_TRUTH_SUPPORT,
+    GroundTruth,
 )
 from praxon_core.eval.metrics import VIOLATION_THRESHOLD, violation_rate
 from praxon_core.eval.report import (
@@ -172,3 +180,58 @@ def test_dinh_dang_bao_cao_co_ghi_chu_va_bon_chi_so():
     assert "RỖNG" in text
     assert "support=0.5" in text
     assert "confidence=0.5" in text
+
+
+def _handmade_tenant(tenant_id: str, order: tuple[str, ...]) -> TenantData:
+    """Tenant không-phải-giả: trace viết tay theo một thứ tự cho trước."""
+    traces = tuple(Trace(events=order) for _ in range(10))
+    own_rules = discover(
+        traces,
+        support=GROUND_TRUTH_SUPPORT,
+        confidence=GROUND_TRUTH_CONFIDENCE,
+    )
+    return TenantData(
+        tenant_id=tenant_id,
+        train_traces=traces,
+        measure_traces=traces,
+        ground_truth=GroundTruth(
+            tenant_id=tenant_id,
+            reference=frozenset(rule.canonical_key for rule in own_rules),
+            source="test",
+        ),
+        own_rules=own_rules,
+    )
+
+
+def test_condition_fact_sets_dung_duoc_cho_tenant_khong_phai_gia() -> None:
+    """Khái quát hóa 11.2: hàm chỉ đọc tenant_id/train_traces/own_rules.
+
+    Ba tenant viết tay (không qua bộ sinh, tên không phải synthetic-N):
+    m1 và m2 cùng thứ tự A→B→C, m3 đảo C lên đầu. Luật chung cả ba
+    (response(A, B)) phải được bỏ phiếu vào và vào đồng thuận; luật chỉ
+    hai tenant có (response(A, C)) không đủ VOTE_K và bị m3 vi phạm nên
+    không vào đồng thuận.
+    """
+    tenants = [
+        _handmade_tenant("m1", ("A", "B", "C")),
+        _handmade_tenant("m2", ("A", "B", "C")),
+        _handmade_tenant("m3", ("C", "A", "B")),
+    ]
+    sets = condition_fact_sets(tenants)
+    assert {DECLARE_ONLY, ISOLATION, POOLED, VOTING, CONSENSUS, VETO} <= set(sets)
+    for tenant in tenants:
+        own = {fact.canonical_key for fact in sets[DECLARE_ONLY][tenant.tenant_id]}
+        assert own == {fact.canonical_key for fact in sets[ISOLATION][tenant.tenant_id]}
+        assert "response(A, B)" in own
+    voting_global = {
+        fact.canonical_key for fact in sets[VOTING]["m1"] if fact.scope == "global"
+    }
+    assert "response(A, B)" in voting_global
+    assert "response(A, C)" not in voting_global
+    consensus_global = {
+        fact.canonical_key for fact in sets[CONSENSUS]["m1"] if fact.scope == "global"
+    }
+    assert "response(A, B)" in consensus_global
+    assert "response(A, C)" not in consensus_global
+    veto_m3 = {fact.canonical_key for fact in sets[VETO]["m3"] if fact.scope == "global"}
+    assert "response(A, B)" in veto_m3
