@@ -13,6 +13,7 @@ model_id = "Qwen/Qwen3-8B-GGUF"
 model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
 model_max_retries = 3
 model_retry_base_delay_seconds = 1.0
+model_timeout_seconds = 1800.0
 reflector_batch_size = 10
 reflector_max_insights_per_batch = 20
 checkpoint_every_n_cases = 100

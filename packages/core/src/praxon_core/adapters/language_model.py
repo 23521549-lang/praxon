@@ -274,7 +274,11 @@ def model_from_settings(
                 "backend endpoint cần khóa API: đặt biến môi trường PRAXON_OPENAI_API_KEY"
             )
     client = openai.OpenAI(
-        base_url=base_url, api_key=api_key, max_retries=0, http_client=http_client
+        base_url=base_url,
+        api_key=api_key,
+        max_retries=0,
+        http_client=http_client,
+        timeout=settings.model_timeout_seconds,
     )
     return OpenAICompatibleModel(
         client,

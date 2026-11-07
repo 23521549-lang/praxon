@@ -62,8 +62,17 @@ def _filter_response_headers(headers: Message[str, str]) -> list[tuple[str, str]
     ]
 
 
-def make_handler(upstream: str, api_key: str) -> type[BaseHTTPRequestHandler]:
-    """Dựng lớp handler chuyển tiếp tới `upstream` với khóa đã cho."""
+def make_handler(
+    upstream: str, api_key: str, *, timeout: float = 1800.0
+) -> type[BaseHTTPRequestHandler]:
+    """Dựng lớp handler chuyển tiếp tới `upstream` với khóa đã cho.
+
+    `timeout` là giới hạn chờ (giây) của một lần chuyển tiếp tới server
+    mô hình — mặc định 1800 giây, khớp tường timeout của client SDK
+    (task 9.1: đoạn Wabo dài sinh ~690 giây, tường cũ 600 giây làm
+    mọi lần gọi chết đúng tường). Không đổi tường này mà không đổi
+    cả hai bên: lệch nhau thì tường thấp hơn vẫn giết lần gọi.
+    """
 
     class ProxyHandler(BaseHTTPRequestHandler):
         """Chuyển tiếp một yêu cầu, chèn khóa, trả nguyên phản hồi."""
@@ -84,7 +93,7 @@ def make_handler(upstream: str, api_key: str) -> type[BaseHTTPRequestHandler]:
                 url, data=body, headers=headers, method=self.command
             )
             try:
-                with urllib.request.urlopen(request, timeout=600) as response:
+                with urllib.request.urlopen(request, timeout=timeout) as response:
                     payload = response.read()
                     self.send_response(response.status)
                     for name, value in _filter_response_headers(response.headers):
@@ -133,6 +142,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--port", type=int, default=8081, help="cổng lắng nghe (mặc định %(default)s)"
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=1800.0,
+        help="timeout (giây) của một lần chuyển tiếp tới server mô hình "
+        "(mặc định %(default)s, khớp tường của client SDK)",
+    )
     args = parser.parse_args(argv)
     api_key = os.environ.get(ENV_VAR)
     if not api_key:
@@ -141,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    handler = make_handler(args.upstream, api_key)
+    handler = make_handler(args.upstream, api_key, timeout=args.timeout)
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(
         f"llm-auth-proxy: nghe {args.host}:{args.port}, chuyển tiếp tới {args.upstream}",
