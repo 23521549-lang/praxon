@@ -26,7 +26,7 @@ Lấy nguyên từ lộ trình, không diễn giải thêm:
 | C2 | 4 chỉ số + CI + bản ghi lần chạy | CHƯA ĐỦ | Từ đầu ra lệnh 13.1 (chưa có) | — | — |
 | C3 | Chạy lại ra đúng kết quả | CHƯA ĐỦ | Chạy lệnh 13.1 hai lần (chưa có) | — | — |
 | C4 | 21 phép tấn công bị chặn | ĐẠT (về thực chất) + MỤC MỞ | 25/25 phép tấn công bị chặn (34/34 test) | 3c27472 | 7/11/2026 |
-| C5 | CI xanh ở mọi cổng máy | CHƯA ĐẠT | Tại chỗ 11/11 xanh; GitHub ĐỎ (run 42368407153) | 3c27472 | 7/11/2026 |
+| C5 | CI xanh ở mọi cổng máy | CHƯA ĐỦ | Tại chỗ 11/11 xanh; GitHub ĐỎ (run 42368407153) | 3c27472 | 7/11/2026 |
 | C6 | Ba nền móng phòng điều khiển có test | ĐẠT | 23 test qua (7 + 9 + 7) | 3c27472 | 7/11/2026 |
 
 ## C1 — Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu
@@ -80,7 +80,7 @@ Phép thử: `python -m pytest tests/integration/test_invariants.py` — xanh: *
 
 ## C5 — CI xanh ở mọi cổng máy
 
-**Verdict: CHƯA ĐẠT.**
+**Verdict: CHƯA ĐỦ.**
 
 Hai số:
 
