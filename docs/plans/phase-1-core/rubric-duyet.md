@@ -22,7 +22,7 @@
 | 7 | Spec, dòng 241 (R9) | Rủi ro "Tự duyệt": giải pháp "Duyệt chéo mù, kappa ≥ 0,61, rubric khóa trước". Mức còn lại: Nhẹ. Dấu hiệu theo dõi: "Kappa dưới 0,61". Khi nào kiểm: Tuần 4. |
 | 8 | Spec, dòng 110–125 (bảng luật Governor, luật 1–9) | Luật 1 (mâu thuẫn trực tiếp fact active → người duyệt); luật 2 (đúng lược đồ Declare; Wilson ≥ 0,7 nếu từ trace); luật 7 (điều kiện thuộc tính cần ≥ 30 case); luật 8 (bật sớm, ghi điều khoản rubric). |
 | 9 | Lệnh kappa: `packages/core/src/praxon_core/eval/kappa.py` | `cohen_kappa(rater_a, rater_b)` = (Po − Pe)/(1 − Pe); `KAPPA_THRESHOLD = 0.61`; `kappa_meets_threshold(kappa)` = kappa ≥ 0,61. Nếu Pe = 1 (cả hai luôn chấm cùng một nhãn) thì kappa quy ước là 1,0. |
-| 10 | Test kappa: `tests/test_kappa.py` | Nhãn dùng trong test: "approve"/"reject". Ví dụ: đồng ý 18/20, Pe = 0,52 → kappa = 19/24 ≈ 0,79, đạt ngưỡng. Ngưỡng đúng 0,61 thì đạt, 0,60 thì không. |
+| 10 | Test kappa: `tests/test_kappa.py` | Nhãn dùng trong test: "approve"/"reject" và "yes"/"no". Ví dụ: đồng ý 18/20, Pe = 0,52 → kappa = 19/24 ≈ 0,79, đạt ngưỡng. Ngưỡng đúng 0,61 thì đạt, 0,60 thì không. |
 
 ## 1. Các điều khoản
 
