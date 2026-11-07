@@ -15,9 +15,16 @@ import zipfile
 from typing import Never, cast
 
 import pytest
-from tools.ci_fetch_bpic2015 import ENV_FALLBACK_URL, FetchError, FetchResult, fetch, main
+from tools.ci_fetch_bpic2015 import (
+    ENV_FALLBACK_URL,
+    FetchError,
+    FetchResult,
+    fetch,
+    fetch_all,
+    main,
+)
 
-from praxon_core.datasets.bpic2015 import BPIC2015_DATASETS
+from praxon_core.datasets.bpic2015 import BPIC2015_DATASETS, BPIC2015Dataset
 
 FAKE_XES = b'<log><trace><string key="concept:name" value="c1"/></trace></log>'
 WRONG_XES = b'<log><trace><string key="concept:name" value="khac"/></trace></log>'
@@ -306,3 +313,98 @@ def test_main_dataset_la_thi_thoat_2(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         main(["--dataset", "m9", "--cache-dir", str(tmp_path)])
     assert exc_info.value.code == 2
+
+
+def _serve_dataset(server: _FakeFigshare, dataset: BPIC2015Dataset, xes_bytes: bytes) -> None:
+    """Đăng metadata + file tải cho một dataset bất kỳ (mở rộng của `_serve_m1`)."""
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    digest = hashlib.md5(xes_bytes).hexdigest()
+    server.routes[f"/v2/articles/{dataset.article_id}"] = (
+        200,
+        json.dumps(
+            {
+                "id": dataset.article_id,
+                "files": [
+                    {
+                        "name": dataset.xes_filename,
+                        "size": len(xes_bytes),
+                        "computed_md5": digest,
+                        "download_url": f"{base}/files/{dataset.xes_filename}",
+                    },
+                    {
+                        "name": f"DATA{dataset.slug[1:]}.xml",
+                        "size": len(xes_bytes),
+                        "computed_md5": digest,
+                        "download_url": f"{base}/files/DATA{dataset.slug[1:]}.xml",
+                    },
+                ],
+            }
+        ).encode("utf-8"),
+        "application/json",
+    )
+    server.routes[f"/files/{dataset.xes_filename}"] = (
+        200,
+        xes_bytes,
+        "application/xml",
+    )
+
+
+def test_fetch_all_lay_du_5_file_qua_chinh_thuc(figshare_server, tmp_path):
+    for dataset in BPIC2015_DATASETS:
+        _serve_dataset(figshare_server, dataset, FAKE_XES)
+    results = fetch_all(
+        tmp_path, None, api_base=_api_base(figshare_server), retry_delay_seconds=0
+    )
+    assert len(results) == 5
+    assert [result.source for result in results] == ["chinh-thuc"] * 5
+    for dataset, result in zip(BPIC2015_DATASETS, results, strict=True):
+        assert result.path == tmp_path / dataset.xes_filename
+        assert result.path.read_bytes() == FAKE_XES
+        assert result.md5 == hashlib.md5(FAKE_XES).hexdigest()
+
+
+def test_fetch_all_mot_file_loi_thi_thoat_1(figshare_server, tmp_path):
+    for dataset in BPIC2015_DATASETS:
+        _serve_dataset(figshare_server, dataset, FAKE_XES)
+    last = BPIC2015_DATASETS[-1]
+    figshare_server.routes[f"/files/{last.xes_filename}"] = (
+        500,
+        b"loi may chu",
+        "text/plain",
+    )
+    with pytest.raises(FetchError) as exc_info:
+        fetch_all(
+            tmp_path,
+            None,
+            api_base=_api_base(figshare_server),
+            retry_delay_seconds=0,
+        )
+    assert last.slug in str(exc_info.value)
+    assert (tmp_path / BPIC2015_DATASETS[0].xes_filename).is_file()
+    assert not (tmp_path / last.xes_filename).exists()
+
+
+def test_main_all_tra_0_va_in_du_5_dong(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(
+        "tools.ci_fetch_bpic2015.fetch_all",
+        lambda *args, **kwargs: [
+            FetchResult(
+                source="cache",
+                path=tmp_path / dataset.xes_filename,
+                md5="abc",
+            )
+            for dataset in BPIC2015_DATASETS
+        ],
+    )
+    assert main(["--dataset", "all", "--cache-dir", str(tmp_path)]) == 0
+    assert capsys.readouterr().out.count("cache:") == 5
+
+
+def test_main_all_tra_1_khi_mot_file_loi(monkeypatch, tmp_path, capsys):
+    def _fail(*args: object, **kwargs: object) -> Never:
+        raise FetchError(["m5: chinh-thuc lần 3: lỗi", "m5: dự phòng: lỗi"])
+
+    monkeypatch.setattr("tools.ci_fetch_bpic2015.fetch_all", _fail)
+    assert main(["--dataset", "all", "--cache-dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert "m5: chinh-thuc lần 3" in captured.err

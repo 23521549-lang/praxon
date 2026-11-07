@@ -209,6 +209,38 @@ def fetch(
     raise FetchError(errors)
 
 
+def fetch_all(
+    cache_dir: Path,
+    fallback_url: str | None,
+    *,
+    api_base: str | None = None,
+    retry_delay_seconds: float = OFFICIAL_RETRY_DELAY_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> list[FetchResult]:
+    """Lấy đủ 5 tệp BPIC 2015 (M1-M5) theo đúng thứ tự của `fetch`.
+
+    Thiếu một tệp thì lỗi ngay (fail-closed) — tên slug đi kèm từng lỗi
+    để phân biệt được file nào hỏng. Các file đã lấy xong trước điểm lỗi
+    vẫn nằm trong cache (đủ md5), lần chạy sau chỉ lấy phần còn thiếu.
+    """
+    results: list[FetchResult] = []
+    for dataset in BPIC2015_DATASETS:
+        try:
+            results.append(
+                fetch(
+                    dataset.slug,
+                    cache_dir,
+                    fallback_url,
+                    api_base=api_base,
+                    retry_delay_seconds=retry_delay_seconds,
+                    sleep=sleep,
+                )
+            )
+        except FetchError as exc:
+            raise FetchError([f"{dataset.slug}: {error}" for error in exc.errors]) from exc
+    return results
+
+
 def main(argv: list[str] | None = None) -> int:
     """Điểm vào CLI: ``python -m tools.ci_fetch_bpic2015 --dataset m1``."""
     parser = argparse.ArgumentParser(
@@ -221,9 +253,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--dataset",
-        choices=[dataset.slug for dataset in BPIC2015_DATASETS],
+        choices=[dataset.slug for dataset in BPIC2015_DATASETS] + ["all"],
         default="m1",
-        help="slug dataset trong registry BPIC 2015 (mặc định: m1).",
+        help=(
+            "slug dataset trong registry BPIC 2015, hoặc 'all' để lấy đủ "
+            "5 đô thị (mặc định: m1)."
+        ),
     )
     parser.add_argument(
         "--cache-dir",
@@ -242,6 +277,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     fallback_url = args.fallback_url or os.environ.get(ENV_FALLBACK_URL)
     try:
+        if args.dataset == "all":
+            results = fetch_all(
+                cache_dir=args.cache_dir,
+                fallback_url=fallback_url,
+            )
+            for result in results:
+                print(f"{result.source}: {result.path} md5={result.md5}")
+            return 0
         result = fetch(
             dataset_slug=args.dataset,
             cache_dir=args.cache_dir,
