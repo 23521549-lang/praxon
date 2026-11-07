@@ -75,7 +75,7 @@ jobs:
         run: python -m mypy
 
       - name: Cổng — ranh giới import
-        run: python -m importlinter.cli --config .importlinter
+        run: lint-imports --config .importlinter
 
       - name: Cổng — biến môi trường chỉ ở settings
         run: python -m tools.check_env_access
