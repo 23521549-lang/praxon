@@ -270,7 +270,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 11.1 | Notebook Kaggle dựng `core` bằng một tệp compose hoặc tương đương, vLLM phục vụ mô hình mở 8B | Notebook chạy từ đầu, in phiên bản mô hình và `model_revision` | chưa làm | chưa review |
 | 11.2 | Chạy bảy điều kiện trên bộ chuẩn và trên phần hiệu chỉnh của năm đô thị | Bản ghi `run` cho từng lần chạy, không lần nào trạng thái `budget_exceeded` ngoài dự kiến | xong | chưa review |
-| 11.3 | Phép thử đứt phiên | Dừng phiên giữa chừng, phiên sau nạp checkpoint từ R2 và ra đúng kết quả | chưa làm | chưa review |
+| 11.3 | Phép thử đứt phiên | Dừng phiên giữa chừng, phiên sau nạp checkpoint từ R2 và ra đúng kết quả | xong | chưa review |
 | 11.4 | Sửa lỗi phát hiện từ bảy điều kiện | Mọi lỗi sửa xong có test hồi quy; CI xanh | chưa làm | chưa review |
 
 **Review plan con 11** — ngày: · người review: · kết luận:
