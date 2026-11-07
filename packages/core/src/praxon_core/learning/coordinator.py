@@ -40,12 +40,19 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from praxon_core.adapters.cache import ResponseCache
 from praxon_core.learning.applier import (
     apply_candidate,
     build_fact_close,
     promote_candidate,
 )
 from praxon_core.learning.candidate import Candidate, DecisionVerdict, GovernorResult
+from praxon_core.learning.checkpoint import (
+    Checkpoint,
+    CheckpointStore,
+    checkpoint_prefix,
+    write_checkpoint,
+)
 from praxon_core.learning.curator import (
     Delta,
     DeltaKind,
@@ -108,14 +115,20 @@ def payload_hash(value: object) -> str:
 def compute_config_hash(settings: Settings) -> str:
     """Băm cấu hình chạy thành `config_hash` (một trong sáu trường của `run`).
 
-    Băm toàn bộ cấu hình TRỪ `database_url` và `openai_api_key`: đổi DB
-    hay xoay khóa không đổi kết quả nên không được đổi hash; khóa thì
-    không bao giờ được đưa vào hash. Mọi trường còn lại đổi là hash đổi
-    — thận trọng: đổi cấu hình thì lần chạy cũ không còn tái lập được.
+    Băm toàn bộ cấu hình TRỪ `database_url`, `openai_api_key` và bốn trường
+    S3 (`s3_endpoint_url`, `s3_bucket`, `s3_access_key_id`,
+    `s3_secret_access_key`): đổi DB, đổi nơi lưu checkpoint hay xoay khóa
+    không đổi kết quả nên không được đổi hash; khóa thì không bao giờ được
+    đưa vào hash. Mọi trường còn lại đổi là hash đổi — thận trọng: đổi cấu
+    hình thì lần chạy cũ không còn tái lập được.
     """
     data = settings.model_dump(mode="json")
     data.pop("database_url", None)
     data.pop("openai_api_key", None)
+    data.pop("s3_endpoint_url", None)
+    data.pop("s3_bucket", None)
+    data.pop("s3_access_key_id", None)
+    data.pop("s3_secret_access_key", None)
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -256,6 +269,15 @@ class LearningRound:
     tường của vòng (người gọi đo bằng đồng hồ, truyền vào). `locked_
     config_hash` + `on_test_split` là khóa phần đo (xem
     `check_test_split_lock`).
+
+    Checkpoint (task 10.3, spec dòng 215): `checkpoint_every_n_cases`
+    là số case mỗi lô (0 = không ghi checkpoint, chạy liền mạch một lô như
+    cũ); `checkpoint_store` là nơi ghi checkpoint (None thì không ghi —
+    `checkpoint_every_n_cases` > 0 mà không có store thì từ chối);
+    `resume_from` là checkpoint để chạy tiếp (con trỏ case phải khớp đầu
+    danh sách case, seed/config/data/model phải khớp — xem
+    `_check_resume_matches`); `cache` là bộ nhớ đệm phản hồi mà checkpoint
+    giữ hộ (khởi động lại thì nạp lại vào cache này trước khi chạy tiếp).
     """
 
     tenant_id: str
@@ -273,6 +295,10 @@ class LearningRound:
     wall_time: float = 0.0
     locked_config_hash: str | None = None
     on_test_split: bool = False
+    checkpoint_every_n_cases: int = 0
+    checkpoint_store: CheckpointStore | None = None
+    resume_from: Checkpoint | None = None
+    cache: ResponseCache | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +326,168 @@ class RoundOutcome:
     run_row: RunRow
 
 
+@dataclass(frozen=True)
+class _ChunkResult:
+    """Kết quả xử lý một lô case: các phần tích lũy của `RoundOutcome`."""
+
+    trajectories: tuple[Trajectory, ...]
+    insights: tuple[Insight, ...]
+    decisions: tuple[GovernorResult, ...]
+    candidate_ids: tuple[str, ...]
+    fact_rows: tuple[FactRow, ...]
+    fact_closes: tuple[FactClose, ...]
+    events: tuple[EventRow, ...]
+    tokens_in: int
+    tokens_out: int
+
+
+def _run_chunk(
+    *,
+    tenant_id: str,
+    chunk_rows: list[EpisodeRow],
+    facts: Sequence[FactRead],
+    rule_table: RuleTable,
+    valid_start: datetime,
+    retired_at: datetime,
+    reflect: ReflectorFn,
+    measures_for: MeasuresFn,
+    candidate_id_for: Callable[[], str],
+) -> _ChunkResult:
+    """Xử lý một lô case: Generator replay → Reflector → Curator → Governor → Applier/Promoter.
+
+    Đây là thân cũ của `run_learning_round`, tách ra để vòng học chia được
+    thành nhiều lô (task 10.3): mỗi lô chạy đúng chuỗi sáu vai như một vòng
+    đầy đủ, chỉ khác là chỉ nhận hàng episode của lô đó.
+    """
+    events: list[EventRow] = []
+    trajectories = replay(tenant_id, list(chunk_rows))
+    events.append(
+        role_call_event(
+            tenant_id=tenant_id,
+            actor="generator",
+            action="replay",
+            payload_hash=payload_hash(chunk_rows),
+        )
+    )
+    reflector_result = reflect(trajectories, facts)
+    events.append(
+        role_call_event(
+            tenant_id=tenant_id,
+            actor="reflector",
+            action="reflect",
+            payload_hash=payload_hash(trajectories),
+        )
+    )
+    decisions: list[GovernorResult] = []
+    candidate_ids: list[str] = []
+    fact_rows: list[FactRow] = []
+    fact_closes: list[FactClose] = []
+    for insight in reflector_result.insights:
+        deltas = curate(insight, list(facts))
+        events.append(
+            role_call_event(
+                tenant_id=tenant_id,
+                actor="curator",
+                action="curate",
+                payload_hash=payload_hash(insight),
+            )
+        )
+        for delta in deltas:
+            candidate = to_candidate(delta, valid_start=valid_start)
+            measures = measures_for(candidate, delta)
+            result = decide(candidate, rule_table, measures)
+            decisions.append(result)
+            candidate_id = candidate_id_for()
+            candidate_ids.append(candidate_id)
+            events.append(
+                governor_decision_event(
+                    result,
+                    tenant_id=tenant_id,
+                    run_id=None,
+                    candidate_id=candidate_id,
+                )
+            )
+            if result.decision.verdict is not DecisionVerdict.AUTO_APPROVE:
+                continue
+            approved = result.candidate.model_copy(update={"status": "approved"})
+            kind = FactPayload.model_validate(approved.payload).kind
+            if kind in (DeltaKind.RETIRE.value, DeltaKind.CONTRADICT.value):
+                fact_closes.append(build_fact_close(approved, retired_at=retired_at))
+            if kind in (DeltaKind.ADD.value, DeltaKind.CONTRADICT.value):
+                if approved.target_scope == "tenant":
+                    fact_rows.append(
+                        apply_candidate(
+                            approved,
+                            candidate_id=candidate_id,
+                            tenant_id=tenant_id,
+                        )
+                    )
+                elif approved.target_scope == "global":
+                    fact_rows.append(promote_candidate(approved, candidate_id=candidate_id))
+            # CONFIRM: fact đã có sẵn — không thêm hàng, không đóng fact.
+    return _ChunkResult(
+        trajectories=tuple(trajectories),
+        insights=tuple(reflector_result.insights),
+        decisions=tuple(decisions),
+        candidate_ids=tuple(candidate_ids),
+        fact_rows=tuple(fact_rows),
+        fact_closes=tuple(fact_closes),
+        events=tuple(events),
+        tokens_in=reflector_result.tokens_in,
+        tokens_out=reflector_result.tokens_out,
+    )
+
+
+def _case_order(rows: Sequence[EpisodeRow]) -> list[str]:
+    """Thứ tự case xuất hiện lần đầu trong các hàng episode."""
+    order: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row.case_id not in seen:
+            seen.add(row.case_id)
+            order.append(row.case_id)
+    return order
+
+
+def _check_resume_matches(
+    round: LearningRound, checkpoint: Checkpoint, case_order: list[str]
+) -> None:
+    """Từ chối chạy tiếp khi checkpoint không thuộc về vòng này.
+
+    Kiểm tenant, seed, model, config_hash, data_hash và con trỏ case:
+    con trỏ phải là đúng đầu danh sách case của vòng (thứ tự case đã đổi
+    thì ranh giới lô đổi theo, chạy tiếp sẽ xử lý sai case). Khác một giá
+    trị là raise — không chạy tiếp từ checkpoint lạ, không đoán.
+    """
+    mismatches: list[str] = []
+    if checkpoint.tenant_id != round.tenant_id:
+        mismatches.append("tenant_id")
+    if checkpoint.seed != round.seed:
+        mismatches.append("seed")
+    if (
+        checkpoint.model_id != round.model_id
+        or checkpoint.model_revision != round.model_revision
+    ):
+        mismatches.append("model")
+    if checkpoint.config_hash != round.config_hash:
+        mismatches.append("config_hash")
+    if checkpoint.data_hash != round.data_hash:
+        mismatches.append("data_hash")
+    if mismatches:
+        raise ValueError(
+            "checkpoint không thuộc về vòng này (khác: "
+            + ", ".join(mismatches)
+            + "): không chạy tiếp từ checkpoint lạ"
+        )
+    done = list(checkpoint.cases_done)
+    if done != case_order[: len(done)]:
+        raise ValueError(
+            "con trỏ case của checkpoint không khớp đầu danh sách case của vòng "
+            f"({done} khác {case_order[: len(done)]}): thứ tự case đã đổi, "
+            "không chạy tiếp được"
+        )
+
+
 def run_learning_round(
     round: LearningRound,
     *,
@@ -322,78 +510,116 @@ def run_learning_round(
     `else` fail-fast cũ (raise khi scope lạ) đã bị xóa vì không còn
     giá trị nào tới được nó. Đường mới tạo Candidate phải giữ bất
     biến này (xem `human_decision_to_candidate`, đã chặn scope lạ).
+
+    Checkpoint (task 10.3, spec dòng 215): khi `checkpoint_every_n_cases`
+    > 0 thì episode chia thành lô N case; sau mỗi lô ghi một checkpoint
+    (fact, candidate đang chờ, con trỏ case, bộ nhớ đệm) vào
+    `checkpoint_store`. Lô đang chạy mà hỏng thì công việc của lô đó bỏ
+    hết — checkpoint chỉ ghi ở ranh giới lô, nên chạy tiếp từ checkpoint
+    mới nhất là chạy lại đúng lô dở đó, không quyết lại candidate đã
+    quyết. `resume_from` cho sẵn thì bỏ qua các case đã xong, nạp lại
+    trạng thái tích lũy + bộ nhớ đệm rồi chạy tiếp các case còn lại.
     """
     if round.on_test_split:
         check_test_split_lock(
             config_hash=round.config_hash,
             locked_config_hash=round.locked_config_hash,
         )
-    events: list[EventRow] = []
-    trajectories = replay(round.tenant_id, list(round.episode_rows))
-    events.append(
-        role_call_event(
-            tenant_id=round.tenant_id,
-            actor="generator",
-            action="replay",
-            payload_hash=payload_hash(round.episode_rows),
+    if round.checkpoint_every_n_cases < 0:
+        raise ValueError("checkpoint_every_n_cases không được âm")
+    store = round.checkpoint_store
+    checkpointing = round.checkpoint_every_n_cases > 0
+    if checkpointing and store is None:
+        raise ValueError(
+            "checkpoint_every_n_cases > 0 mà không có checkpoint_store: "
+            "không biết ghi checkpoint vào đâu"
         )
-    )
-    reflector_result = reflect(trajectories, round.facts)
-    events.append(
-        role_call_event(
-            tenant_id=round.tenant_id,
-            actor="reflector",
-            action="reflect",
-            payload_hash=payload_hash(trajectories),
-        )
-    )
+    case_order = _case_order(round.episode_rows)
+    trajectories: list[Trajectory] = []
+    insights: list[Insight] = []
     decisions: list[GovernorResult] = []
     candidate_ids: list[str] = []
     fact_rows: list[FactRow] = []
     fact_closes: list[FactClose] = []
-    for insight in reflector_result.insights:
-        deltas = curate(insight, list(round.facts))
-        events.append(
-            role_call_event(
-                tenant_id=round.tenant_id,
-                actor="curator",
-                action="curate",
-                payload_hash=payload_hash(insight),
-            )
+    events: list[EventRow] = []
+    tokens_in = 0
+    tokens_out = 0
+    if round.resume_from is not None:
+        checkpoint = round.resume_from
+        _check_resume_matches(round, checkpoint, case_order)
+        done = list(checkpoint.cases_done)
+        trajectories = list(checkpoint.trajectories)
+        insights = list(checkpoint.insights)
+        decisions = list(checkpoint.decisions)
+        candidate_ids = list(checkpoint.candidate_ids)
+        fact_rows = list(checkpoint.fact_rows)
+        fact_closes = list(checkpoint.fact_closes)
+        events = list(checkpoint.events)
+        tokens_in = checkpoint.tokens_in
+        tokens_out = checkpoint.tokens_out
+        if round.cache is not None:
+            round.cache.import_entries(checkpoint.cache_entries)
+    else:
+        done = []
+    remaining = case_order[len(done) :]
+    if remaining:
+        chunk_size = round.checkpoint_every_n_cases if checkpointing else len(remaining)
+        prefix = checkpoint_prefix(
+            tenant_id=round.tenant_id,
+            seed=round.seed,
+            config_hash=round.config_hash,
+            data_hash=round.data_hash,
         )
-        for delta in deltas:
-            candidate = to_candidate(delta, valid_start=round.valid_start)
-            measures = measures_for(candidate, delta)
-            result = decide(candidate, round.rule_table, measures)
-            decisions.append(result)
-            candidate_id = candidate_id_for()
-            candidate_ids.append(candidate_id)
-            events.append(
-                governor_decision_event(
-                    result,
-                    tenant_id=round.tenant_id,
-                    run_id=None,
-                    candidate_id=candidate_id,
-                )
+        for start in range(0, len(remaining), chunk_size):
+            chunk_cases = remaining[start : start + chunk_size]
+            chunk_set = set(chunk_cases)
+            chunk_rows = [row for row in round.episode_rows if row.case_id in chunk_set]
+            chunk = _run_chunk(
+                tenant_id=round.tenant_id,
+                chunk_rows=chunk_rows,
+                facts=round.facts,
+                rule_table=round.rule_table,
+                valid_start=round.valid_start,
+                retired_at=round.retired_at,
+                reflect=reflect,
+                measures_for=measures_for,
+                candidate_id_for=candidate_id_for,
             )
-            if result.decision.verdict is not DecisionVerdict.AUTO_APPROVE:
-                continue
-            approved = result.candidate.model_copy(update={"status": "approved"})
-            kind = FactPayload.model_validate(approved.payload).kind
-            if kind in (DeltaKind.RETIRE.value, DeltaKind.CONTRADICT.value):
-                fact_closes.append(build_fact_close(approved, retired_at=round.retired_at))
-            if kind in (DeltaKind.ADD.value, DeltaKind.CONTRADICT.value):
-                if approved.target_scope == "tenant":
-                    fact_rows.append(
-                        apply_candidate(
-                            approved,
-                            candidate_id=candidate_id,
-                            tenant_id=round.tenant_id,
-                        )
-                    )
-                elif approved.target_scope == "global":
-                    fact_rows.append(promote_candidate(approved, candidate_id=candidate_id))
-            # CONFIRM: fact đã có sẵn — không thêm hàng, không đóng fact.
+            trajectories.extend(chunk.trajectories)
+            insights.extend(chunk.insights)
+            decisions.extend(chunk.decisions)
+            candidate_ids.extend(chunk.candidate_ids)
+            fact_rows.extend(chunk.fact_rows)
+            fact_closes.extend(chunk.fact_closes)
+            events.extend(chunk.events)
+            tokens_in += chunk.tokens_in
+            tokens_out += chunk.tokens_out
+            done.extend(chunk_cases)
+            if checkpointing:
+                assert store is not None  # đã từ chối ở đầu hàm
+                write_checkpoint(
+                    store,
+                    Checkpoint(
+                        tenant_id=round.tenant_id,
+                        seed=round.seed,
+                        model_id=round.model_id,
+                        model_revision=round.model_revision,
+                        config_hash=round.config_hash,
+                        data_hash=round.data_hash,
+                        cases_done=tuple(done),
+                        trajectories=tuple(trajectories),
+                        insights=tuple(insights),
+                        decisions=tuple(decisions),
+                        candidate_ids=tuple(candidate_ids),
+                        fact_rows=tuple(fact_rows),
+                        fact_closes=tuple(fact_closes),
+                        events=tuple(events),
+                        cache_entries=(round.cache.export() if round.cache is not None else {}),
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                    ),
+                    prefix,
+                )
     run_row = RunRow(
         tenant_id=round.tenant_id,
         seed=round.seed,
@@ -402,14 +628,14 @@ def run_learning_round(
         code_commit=round.code_commit,
         config_hash=round.config_hash,
         data_hash=round.data_hash,
-        tokens_in=reflector_result.tokens_in,
-        tokens_out=reflector_result.tokens_out,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
         wall_time=round.wall_time,
         status="succeeded",
     )
     return RoundOutcome(
         trajectories=tuple(trajectories),
-        insights=tuple(reflector_result.insights),
+        insights=tuple(insights),
         decisions=tuple(decisions),
         candidate_ids=tuple(candidate_ids),
         fact_rows=tuple(fact_rows),

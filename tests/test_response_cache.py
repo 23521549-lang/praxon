@@ -179,3 +179,55 @@ def test_non_serializable_params_raise():
     with pytest.raises(TypeError):
         _call(cache, model, params={"temperature": {0.0}})
     assert model.calls == 0
+
+
+def test_export_import_khoi_phuc_ma_khong_goi_lai_model():
+    # Task 10.3: checkpoint giữ mục đệm; khởi động lại nạp lại thì các
+    # prompt cũ trả từ đệm, mô hình không bị gọi lại.
+    first_cache = ResponseCache()
+    model = FakeModel()
+    _call(first_cache, model, prompt="a")
+    _call(first_cache, model, prompt="b")
+    assert model.calls == 2
+    exported = first_cache.export()
+    assert exported == first_cache.export()
+    assert len(exported) == 2
+
+    second_cache = ResponseCache()
+    second_cache.import_entries(exported)
+    assert len(second_cache) == 2
+    assert _call(second_cache, model, prompt="a") == "response-1"
+    assert _call(second_cache, model, prompt="b") == "response-2"
+    assert model.calls == 2
+
+
+def test_export_tra_ban_sao_khong_cham_tung_dem():
+    cache = ResponseCache()
+    model = FakeModel()
+    _call(cache, model, prompt="a")
+    exported = cache.export()
+    exported["khoa-la"] = "gia-tri-la"
+    assert len(cache) == 1
+    assert "khoa-la" not in cache.export()
+
+
+def test_import_gop_voi_muc_da_co():
+    cache = ResponseCache()
+    model = FakeModel()
+    _call(cache, model, prompt="a")
+    other = ResponseCache()
+    _call(other, model, prompt="b")
+    cache.import_entries(other.export())
+    assert len(cache) == 2
+    assert _call(cache, model, prompt="a") == "response-1"
+    assert _call(cache, model, prompt="b") == "response-2"
+    assert model.calls == 2
+
+
+def test_import_dict_rong_khong_doi_gi():
+    cache = ResponseCache()
+    model = FakeModel()
+    _call(cache, model, prompt="a")
+    cache.import_entries({})
+    assert len(cache) == 1
+    assert model.calls == 1

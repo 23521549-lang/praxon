@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -116,6 +116,61 @@ class Settings(BaseModel):
     20 — cùng bậc với số luật miner khám phá trên một log đô thị. Trần
     tính theo từng lô, không phải toàn bộ vòng học. Ghi đè trong tệp TOML
     hoặc biến môi trường `PRAXON_REFLECTOR_MAX_INSIGHTS_PER_BATCH` khi cần.
+    """
+
+    checkpoint_every_n_cases: int = 100
+    """Số case mỗi lô checkpoint (task 10.3, spec dòng 215).
+
+    Cứ mỗi N case đã xử lý, vòng học ghi một điểm kiểm tra (fact, candidate
+    đang chờ, con trỏ case, bộ nhớ đệm) vào store đã chọn. Mặc định 100
+    case — đủ thưa để chi phí ghi checkpoint không đáng kể so với gọi mô
+    hình, đủ dày để khi đứt chỉ chạy lại tối đa 99 case. Ghi đè trong tệp
+    TOML hoặc biến môi trường `PRAXON_CHECKPOINT_EVERY_N_CASES` khi cần.
+    """
+
+    checkpoint_store: Literal["local", "s3"] = "local"
+    """Backend lưu checkpoint (task 10.3, spec dòng 215).
+
+    `"local"` ghi file JSON trên máy chạy (mặc định cho dev/test);
+    `"s3"` đẩy sang object storage S3-compatible (Backblaze B2 — Thuận
+    chọn ngày 7/11/2026 thay R2 trong spec). `"s3"` chỉ chạy được khi đã
+    cấu hình đủ `s3_endpoint_url` + `s3_bucket` + khóa. Ghi đè trong tệp
+    TOML hoặc biến môi trường `PRAXON_CHECKPOINT_STORE` khi cần.
+    """
+
+    s3_endpoint_url: str | None = None
+    """URL endpoint S3-compatible cho checkpoint (task 10.3).
+
+    Backblaze B2: `https://s3.<region>.backblazeb2.com` (lấy từ trang chi
+    tiết bucket). `None` thì dùng endpoint AWS mặc định — chỉ dùng trong
+    test với mock S3; B2 thật bắt buộc phải có endpoint này. Ghi đè trong
+    tệp TOML hoặc biến môi trường `PRAXON_S3_ENDPOINT_URL` khi cần.
+    """
+
+    s3_bucket: str | None = None
+    """Tên bucket lưu checkpoint (task 10.3).
+
+    Bucket do Thuận tạo trong console B2 (vd `praxon-checkpoints`); store
+    không tự tạo bucket. Ghi đè trong tệp TOML hoặc biến môi trường
+    `PRAXON_S3_BUCKET` khi cần.
+    """
+
+    s3_access_key_id: str | None = None
+    """Key ID truy cập S3 cho checkpoint (task 10.3).
+
+    Backblaze B2: keyID của application key (KHÔNG dùng master key).
+    Chỉ qua biến môi trường `PRAXON_S3_ACCESS_KEY_ID`, không bao giờ ghi
+    vào tệp TOML commit lên kho — giống `openai_api_key` (task 6.1).
+    """
+
+    s3_secret_access_key: str | None = None
+    """Khóa bí mật truy cập S3 cho checkpoint (task 10.3).
+
+    Backblaze B2: applicationKey của application key (chỉ hiện một lần
+    lúc tạo key). Chỉ qua biến môi trường `PRAXON_S3_SECRET_ACCESS_KEY`,
+    không bao giờ ghi vào tệp TOML commit lên kho — giống `openai_api_key`
+    (task 6.1). Xoay khóa không đổi `config_hash` (xem
+    `coordinator.compute_config_hash`).
     """
 
 

@@ -99,3 +99,59 @@ def test_bien_moi_truong_ghi_de_so(tmp_path, monkeypatch):
     settings = load_settings(path)
     assert settings.model_max_retries == 5
     assert settings.model_retry_base_delay_seconds == 2.5
+
+
+def test_mac_dinh_checkpoint(tmp_path):
+    # Task 10.3: mặc định checkpoint mỗi 100 case, backend local; chưa có
+    # cấu hình S3 nào.
+    settings = load_settings(_write(tmp_path, 'database_url = "x"\n'))
+    assert settings.checkpoint_every_n_cases == 100
+    assert settings.checkpoint_store == "local"
+    assert settings.s3_endpoint_url is None
+    assert settings.s3_bucket is None
+    assert settings.s3_access_key_id is None
+    assert settings.s3_secret_access_key is None
+
+
+def test_ghi_de_checkpoint_qua_toml(tmp_path):
+    path = _write(
+        tmp_path,
+        'database_url = "x"\n'
+        "checkpoint_every_n_cases = 25\n"
+        'checkpoint_store = "s3"\n'
+        's3_endpoint_url = "https://s3.us-west-004.backblazeb2.com"\n'
+        's3_bucket = "praxon-checkpoints"\n',
+    )
+    settings = load_settings(path)
+    assert settings.checkpoint_every_n_cases == 25
+    assert settings.checkpoint_store == "s3"
+    assert settings.s3_endpoint_url == "https://s3.us-west-004.backblazeb2.com"
+    assert settings.s3_bucket == "praxon-checkpoints"
+
+
+def test_checkpoint_store_sai_gia_tri_thi_tu_choi(tmp_path):
+    path = _write(
+        tmp_path,
+        'database_url = "x"\ncheckpoint_store = "postgres"\n',
+    )
+    with pytest.raises(ValidationError):
+        load_settings(path)
+
+
+def test_khoa_s3_chi_qua_bien_moi_truong(tmp_path, monkeypatch):
+    # Khóa S3 không bao giờ nằm trong tệp TOML: chỉ biến môi trường mới
+    # đưa được nó vào Settings (task 10.3, giống openai_api_key).
+    monkeypatch.setenv(ENV_PREFIX + "S3_ACCESS_KEY_ID", "key-id-that")
+    monkeypatch.setenv(ENV_PREFIX + "S3_SECRET_ACCESS_KEY", "khoa-bi-mat")
+    monkeypatch.setenv(ENV_PREFIX + "S3_ENDPOINT_URL", "https://s3.example.com")
+    monkeypatch.setenv(ENV_PREFIX + "S3_BUCKET", "praxon-checkpoints")
+    monkeypatch.setenv(ENV_PREFIX + "CHECKPOINT_EVERY_N_CASES", "50")
+    monkeypatch.setenv(ENV_PREFIX + "CHECKPOINT_STORE", "s3")
+    path = _write(tmp_path, 'database_url = "x"\n')
+    settings = load_settings(path)
+    assert settings.s3_access_key_id == "key-id-that"
+    assert settings.s3_secret_access_key == "khoa-bi-mat"
+    assert settings.s3_endpoint_url == "https://s3.example.com"
+    assert settings.s3_bucket == "praxon-checkpoints"
+    assert settings.checkpoint_every_n_cases == 50
+    assert settings.checkpoint_store == "s3"
