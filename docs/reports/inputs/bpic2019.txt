@@ -1,0 +1,8 @@
+BPIC 2019 (10.4121/uuid:d06aff4b-79f0-45e6-8ec8-e19730c248f1): BPI_Challenge_2019.xes
+tổng case: 251734 (trong năm 2018: 251268; ngoài năm: 466; thiếu Item Category: 0; không có thời điểm bắt đầu: 0)
+loại matching (Item Category) | case (2018) | luật | quyết định
+2-way match | 891 | 2 | auto_approve (Luật 2 khớp: Ràng buộc mới, từ trace hoặc từ tài liệu)
+3-way match, invoice after GR | 15131 | 2 | auto_approve (Luật 2 khớp: Ràng buộc mới, từ trace hoặc từ tài liệu)
+3-way match, invoice before GR | 220752 | 2 | auto_approve (Luật 2 khớp: Ràng buộc mới, từ trace hoặc từ tài liệu)
+Consignment | 14494 | 2 | auto_approve (Luật 2 khớp: Ràng buộc mới, từ trace hoặc từ tài liệu)
+hiệu chỉnh min_matching_cases=30: cả 4 loại đều đủ ngưỡng (nhỏ nhất '2-way match': 891 case, gấp 29.7 lần) — ngưỡng được giữ nguyên.
