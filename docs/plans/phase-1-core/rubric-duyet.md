@@ -89,9 +89,10 @@ Mỗi điều khoản chấm một trong ba mức: **Đạt** / **Không đạt*
 - **Nhãn chấm:** mỗi quyết định chéo ghi một nhãn trong hai nhãn: `duyệt` hoặc
   `chặn`. (Bật sớm được gộp vào `duyệt` ở bước chấm chéo — vì chấm chéo chỉ đo
   đồng thuận về đúng/sai của ràng buộc, không đo thời điểm bật.)
-  - Nhãn dùng trong lệnh kappa là chuỗi; test kappa dùng "approve"/"reject" (xem
-    `tests/test_kappa.py`). Khi chạy lệnh, dùng nhãn `duyệt`/`chặn` (tiếng Việt)
-    hoặc `approve`/`reject` (tiếng Anh) — chỉ cần hai người dùng cùng một bộ nhãn.
+  - Nhãn dùng trong lệnh kappa là chuỗi; test kappa dùng "approve"/"reject" và
+    "yes"/"no" (xem `tests/test_kappa.py`). Khi chạy lệnh, dùng một bộ nhãn
+    trong ba bộ: `duyệt`/`chặn` (tiếng Việt), `approve`/`reject` (tiếng Anh),
+    hoặc `yes`/`no` — chỉ cần hai người dùng cùng một bộ nhãn.
 
 ### 2.3. Tính kappa và ngưỡng
 
