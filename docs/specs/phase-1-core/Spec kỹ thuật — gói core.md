@@ -118,11 +118,11 @@ Governor nạp một bảng luật có thứ tự, duyệt từ trên xuống, l
 | 8 | Fact đang trial | Người duyệt chọn bật sớm, ghi điều khoản rubric | Lên active, ghi decided\_by; luật 4 vẫn gỡ nếu dữ liệu sau đó bác bỏ |
 | 9 | Còn lại | — | Chờ thêm dữ liệu |
 
-**Cổng Beta, nói đơn giản.** Mỗi luật ở `trial` có một ước lượng độ tin kèm độ chắc chắn. Ước lượng khởi đầu từ tiên nghiệm — độ tin của luật trong global nếu luật đến từ global, ngược lại là phẳng — với độ mạnh tương đương 4 case. Mỗi trace của tenant cập nhật ước lượng. Luật lên chính thức khi gần như chắc rằng độ tin trên 0,7, và bị gỡ khi gần như chắc rằng không. Không có số trace tối thiểu cố định: luật rõ ràng lên nhanh, luật mập mờ chờ lâu hơn.
+**Cổng Beta, nói đơn giản.** Mỗi luật ở `trial` có một ước lượng độ tin kèm độ chắc chắn. Ước lượng khởi đầu từ tiên nghiệm — độ tin của luật trong global nếu luật đến từ global, ngược lại là phẳng — với độ mạnh tương đương 2 case. Mỗi trace của tenant cập nhật ước lượng. Luật lên chính thức khi gần như chắc rằng độ tin trên 0,7, và bị gỡ khi gần như chắc rằng không. Không có số trace tối thiểu cố định: luật rõ ràng lên nhanh, luật mập mờ chờ lâu hơn.
 
 Mô phỏng ngày 3/10 trên log có 15% trace nhiễu cho thấy cách này đạt 100% luật đúng, nhanh nhất trong bốn cách đã thử, không áp sai luật nào — kể cả với tenant thiểu số có 40% case làm theo số đông. Ngưỡng cố định trước đây kẹt ở 87%.
 
-**Tiên nghiệm một mình không bao giờ đưa luật lên chính thức.** Độ mạnh tiên nghiệm quá cao thì luật trong gói thành chính thức trước khi tenant có trace nào, kể cả luật sai: mô phỏng 2.000 tenant cho thấy ở độ mạnh 20, luật sai được áp ngay từ đầu và chỉ bị gỡ sau 15 đến 78 trace. Trần an toàn phụ thuộc độ tin khai trong gói: dưới 10,3 ở độ tin 0,95, nhưng chỉ dưới 7,4 ở độ tin 1,0. Vì vậy bất biến kiểm theo từng luật lúc nạp gói: xác suất hậu nghiệm tính từ tiên nghiệm một mình phải dưới ngưỡng 0,95, không thì từ chối nạp cả gói. Độ mạnh mặc định 4 an toàn với mọi độ tin.
+**Tiên nghiệm một mình không bao giờ đưa luật lên chính thức.** Độ mạnh tiên nghiệm quá cao thì luật trong gói thành chính thức trước khi tenant có trace nào, kể cả luật sai: mô phỏng 2.000 tenant cho thấy ở độ mạnh 20, luật sai được áp ngay từ đầu và chỉ bị gỡ sau 15 đến 78 trace. Trần an toàn phụ thuộc độ tin khai trong gói: dưới 10,3 ở độ tin 0,95, nhưng chỉ dưới 7,4 ở độ tin 1,0. Vì vậy bất biến kiểm theo từng luật lúc nạp gói: xác suất hậu nghiệm tính từ tiên nghiệm một mình phải dưới ngưỡng 0,95, không thì từ chối nạp cả gói. Độ mạnh mặc định 2 an toàn với mọi độ tin.
 
 **Cổng nâng phạm vi.** Bỏ phiếu đơn thuần — đủ k tenant cùng học được thì nâng — đã bị phép thử bác bỏ: khi các tenant đa số giống nhau, luật của nhóm đa số lọt vào `global` và áp sai cho tenant thiểu số. Hai phương án sống sót, chọn sau khi chạy bộ chuẩn bán tổng hợp và BPIC 2015:
 
@@ -131,7 +131,7 @@ Mô phỏng ngày 3/10 trên log có 15% trace nhiễu cho thấy cách này đ�
 
 Ở dữ liệu mô phỏng hai phương án hòa nhau. Với doanh nghiệp vừa cài và chưa có dữ liệu thì cả hai đều áp sai, nên luật 6 là bắt buộc dù chọn phương án nào.
 
-Các tham số 0,7; 0,95; 0,05; độ mạnh tiên nghiệm 4 và phần tối thiểu 30 case lấy từ mô phỏng, nằm trong tệp cấu hình chính sách và hiệu chỉnh trên phần hiệu chỉnh của BPIC 2015 ở tuần 4. Độ mạnh tiên nghiệm hiệu chỉnh trên ít nhất ba giá trị, và chỉ trong vùng bất biến tiên nghiệm cho phép.
+Các tham số 0,7; 0,95; 0,05; độ mạnh tiên nghiệm 2 và phần tối thiểu 30 case lấy từ mô phỏng, nằm trong tệp cấu hình chính sách và hiệu chỉnh trên phần hiệu chỉnh của BPIC 2015 ở tuần 4. Độ mạnh tiên nghiệm hiệu chỉnh trên ít nhất ba giá trị, và chỉ trong vùng bất biến tiên nghiệm cho phép.
 
 **Mỗi quyết định phải giải thích được.** Governor ghi vào `candidate` số hiệu luật đã khớp và giá trị các đại lượng lúc đánh giá. Chạy lại Governor trên cùng candidate và cùng bảng luật phải ra đúng quyết định cũ.
 
