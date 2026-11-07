@@ -17,11 +17,20 @@ from uuid import UUID
 
 import pytest
 
+from praxon_core.adapters.cache import ResponseCache
+from praxon_core.adapters.local_store import LocalCheckpointStore
 from praxon_core.learning.candidate import DecisionVerdict, FactStatus
+from praxon_core.learning.checkpoint import (
+    Checkpoint,
+    CheckpointStore,
+    checkpoint_prefix,
+    read_latest_checkpoint,
+)
 from praxon_core.learning.coordinator import (
     LearningRound,
     ReflectorFn,
     ReflectorResult,
+    RoundOutcome,
     check_test_split_lock,
     compute_config_hash,
     is_reproducible,
@@ -205,6 +214,34 @@ def test_config_hash_khong_doi_khi_doi_db_hay_khoa():
         )
     )
     assert base == changed
+
+
+def test_config_hash_khong_doi_khi_doi_s3_hay_xoay_khoa_s3():
+    # Task 10.3: đổi nơi lưu checkpoint hay xoay khóa S3 không đổi kết quả
+    # nên không đổi hash — giống database_url và openai_api_key.
+    base = compute_config_hash(Settings(database_url="postgresql://localhost:5432/praxon"))
+    changed = compute_config_hash(
+        Settings(
+            database_url="postgresql://localhost:5432/praxon",
+            s3_endpoint_url="https://s3.us-west-004.backblazeb2.com",
+            s3_bucket="praxon-checkpoints",
+            s3_access_key_id="key-id-moi",
+            s3_secret_access_key="khoa-bi-mat-moi",
+        )
+    )
+    assert base == changed
+
+
+def test_config_hash_doi_khi_doi_nhip_checkpoint():
+    # Task 10.3: nhịp checkpoint đổi thì cách chia lô đổi theo, nên hash đổi.
+    base = compute_config_hash(Settings(database_url="postgresql://localhost:5432/praxon"))
+    changed = compute_config_hash(
+        Settings(
+            database_url="postgresql://localhost:5432/praxon",
+            checkpoint_every_n_cases=25,
+        )
+    )
+    assert base != changed
 
 
 def test_merge_data_hash_hai_nua_theo_thu_tu_co_dinh():
@@ -483,3 +520,354 @@ def test_run_learning_round_khoa_phan_do_khop_thi_chay():
         candidate_id_for=_candidate_ids(),
     )
     assert outcome.run_row.status == "succeeded"
+
+
+# --- Checkpoint (task 10.3) ---
+
+FOUR_CASES = (
+    ("c1", ("A", "B")),
+    ("c2", ("C", "D")),
+    ("c3", ("E", "F")),
+    ("c4", ("G", "H")),
+)
+
+
+def _prefix() -> str:
+    return checkpoint_prefix(
+        tenant_id="acme", seed=SEED, config_hash=CONFIG_HASH, data_hash=DATA_HASH
+    )
+
+
+def _round_cases(
+    cases: tuple[tuple[str, tuple[str, ...]], ...] = FOUR_CASES,
+    *,
+    checkpoint_every_n_cases: int = 0,
+    checkpoint_store: CheckpointStore | None = None,
+    resume_from: Checkpoint | None = None,
+    cache: ResponseCache | None = None,
+) -> LearningRound:
+    rows = []
+    for index, (case_id, activities) in enumerate(cases):
+        for step, activity in enumerate(activities):
+            rows.append(
+                _episode(case_id, activity, f"2026-11-06T{10 + index:02d}:{step:02d}:00")
+            )
+    return LearningRound(
+        tenant_id="acme",
+        episode_rows=tuple(rows),
+        facts=(),
+        rule_table=default_rule_table(),
+        seed=SEED,
+        model_id=MODEL_ID,
+        model_revision=MODEL_REVISION,
+        code_commit=CODE_COMMIT,
+        config_hash=CONFIG_HASH,
+        data_hash=DATA_HASH,
+        valid_start=VALID_START,
+        retired_at=RETIRED_AT,
+        wall_time=1.5,
+        checkpoint_every_n_cases=checkpoint_every_n_cases,
+        checkpoint_store=checkpoint_store,
+        resume_from=resume_from,
+        cache=cache,
+    )
+
+
+class _CountingModel:
+    """Mô hình giả: đếm số lần gọi, trả phản hồi cố định."""
+
+    def __init__(self) -> None:
+        """Chưa gọi lần nào."""
+        self.calls: int = 0
+
+    def __call__(self, prompt: str) -> str:
+        """Đếm một lần gọi rồi trả phản hồi cố định."""
+        self.calls += 1
+        return "phan-hoi"
+
+
+def _reflect_by_trajectory(
+    cache: ResponseCache | None = None,
+    model: Callable[[str], str] | None = None,
+    fail_on: tuple[str, ...] = (),
+    seen: list[str] | None = None,
+) -> ReflectorFn:
+    def reflect(
+        trajectories: Sequence[Trajectory], facts: Sequence[FactRead]
+    ) -> ReflectorResult:
+        if seen is not None:
+            seen.extend(t.case_id for t in trajectories)
+        if any(t.case_id in fail_on for t in trajectories):
+            raise RuntimeError("đứt giữa chừng")
+        insights = []
+        tokens_in = 0
+        tokens_out = 0
+        for trajectory in trajectories:
+            if cache is not None and model is not None:
+                cache.get_or_call(
+                    f"reflect:{trajectory.case_id}",
+                    model_revision=MODEL_REVISION,
+                    decode_params={},
+                    json_schema={},
+                    call=model,
+                )
+            insights.append(
+                _insight(
+                    "response",
+                    trajectory.activities[0],
+                    trajectory.activities[1],
+                    "global",
+                )
+            )
+            tokens_in += 1
+            tokens_out += 2
+        return ReflectorResult(
+            insights=tuple(insights), tokens_in=tokens_in, tokens_out=tokens_out
+        )
+
+    return reflect
+
+
+def _assert_same_outcome_without_events(first: RoundOutcome, second: RoundOutcome) -> None:
+    # Events khác nhau theo cách chia lô (một event generator/reflector mỗi
+    # lô) nên so từng phần còn lại, không so cả outcome.
+    assert first.trajectories == second.trajectories
+    assert first.insights == second.insights
+    assert first.decisions == second.decisions
+    assert first.candidate_ids == second.candidate_ids
+    assert first.fact_rows == second.fact_rows
+    assert first.fact_closes == second.fact_closes
+    assert (first.run_row.tokens_in, first.run_row.tokens_out) == (
+        second.run_row.tokens_in,
+        second.run_row.tokens_out,
+    )
+    assert first.run_row.status == second.run_row.status == "succeeded"
+
+
+def test_run_learning_round_checkpoint_khong_store_thi_tu_choi():
+    with pytest.raises(ValueError, match="không có checkpoint_store"):
+        run_learning_round(
+            _round_cases(checkpoint_every_n_cases=2),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+
+
+def test_run_learning_round_checkpoint_n_am_thi_tu_choi():
+    with pytest.raises(ValueError, match="không được âm"):
+        run_learning_round(
+            _round_cases(checkpoint_every_n_cases=-1),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+
+
+def test_run_learning_round_chia_lo_ghi_checkpoint(tmp_path):
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    outcome = run_learning_round(
+        _round_cases(checkpoint_every_n_cases=2, checkpoint_store=store),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert [t.case_id for t in outcome.trajectories] == ["c1", "c2", "c3", "c4"]
+    assert len(outcome.decisions) == 4
+    assert outcome.candidate_ids == ("candidate-0", "candidate-1", "candidate-2", "candidate-3")
+    assert [row.canonical_key for row in outcome.fact_rows] == [
+        "response(A, B)",
+        "response(C, D)",
+        "response(E, F)",
+        "response(G, H)",
+    ]
+    assert (outcome.run_row.tokens_in, outcome.run_row.tokens_out) == (4, 8)
+    # Hai checkpoint đã ghi, đúng ranh giới lô; checkpoint giữ đủ trạng thái.
+    prefix = _prefix()
+    assert store.list_keys(prefix) == [prefix + "/000002.json", prefix + "/000004.json"]
+    latest = read_latest_checkpoint(store, prefix)
+    assert latest is not None
+    assert latest.cases_done == ("c1", "c2", "c3", "c4")
+    assert latest.decisions == outcome.decisions
+    assert latest.candidate_ids == outcome.candidate_ids
+    assert latest.fact_rows == outcome.fact_rows
+    # Chia lô không đổi kết quả so với chạy liền mạch.
+    reference = run_learning_round(
+        _round_cases(),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    _assert_same_outcome_without_events(outcome, reference)
+
+
+def test_run_learning_round_resume_chay_tiep_tu_con_tro(tmp_path):
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    prefix = _prefix()
+    shared_ids = _candidate_ids()
+    seen: list[str] = []
+    with pytest.raises(RuntimeError, match="đứt giữa chừng"):
+        run_learning_round(
+            _round_cases(checkpoint_every_n_cases=2, checkpoint_store=store),
+            reflect=_reflect_by_trajectory(fail_on=("c3",), seen=seen),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=shared_ids,
+        )
+    # Lô 1 đã ghi checkpoint; lô 2 đứt nên chưa có checkpoint 000004.
+    assert seen == ["c1", "c2", "c3", "c4"]
+    assert store.list_keys(prefix) == [prefix + "/000002.json"]
+    latest = read_latest_checkpoint(store, prefix)
+    assert latest is not None
+    assert latest.cases_done == ("c1", "c2")
+
+    # Chạy tiếp từ checkpoint: reflector chỉ thấy c3, c4; id candidate nối tiếp.
+    seen.clear()
+    resumed = run_learning_round(
+        _round_cases(
+            checkpoint_every_n_cases=2,
+            checkpoint_store=store,
+            resume_from=latest,
+        ),
+        reflect=_reflect_by_trajectory(seen=seen),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=shared_ids,
+    )
+    assert seen == ["c3", "c4"]
+    assert store.list_keys(prefix) == [prefix + "/000002.json", prefix + "/000004.json"]
+    reference = run_learning_round(
+        _round_cases(),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    _assert_same_outcome_without_events(resumed, reference)
+
+
+def _checkpoint_for_resume(**overrides: object) -> Checkpoint:
+    checkpoint = Checkpoint(
+        tenant_id="acme",
+        seed=SEED,
+        model_id=MODEL_ID,
+        model_revision=MODEL_REVISION,
+        config_hash=CONFIG_HASH,
+        data_hash=DATA_HASH,
+        cases_done=("c1", "c2"),
+    )
+    return checkpoint.model_copy(update=overrides)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tenant_id", "globex"),
+        ("seed", 43),
+        ("model_id", "mo-hinh-khac"),
+        ("model_revision", "0" * 40),
+        ("config_hash", "0" * 64),
+        ("data_hash", "0" * 64),
+    ],
+)
+def test_run_learning_round_resume_sai_vong_thi_tu_choi(field, value):
+    with pytest.raises(ValueError, match="không thuộc về vòng này"):
+        run_learning_round(
+            _round_cases(resume_from=_checkpoint_for_resume(**{field: value})),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+
+
+@pytest.mark.parametrize(
+    "cases_done",
+    [
+        ("c2", "c1"),
+        ("c1", "c3"),
+        ("c9",),
+    ],
+)
+def test_run_learning_round_resume_con_tro_sai_thi_tu_choi(cases_done):
+    with pytest.raises(ValueError, match="con trỏ case"):
+        run_learning_round(
+            _round_cases(resume_from=_checkpoint_for_resume(cases_done=cases_done)),
+            reflect=_reflect_by_trajectory(),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+
+
+def test_run_learning_round_resume_da_xong_het_thi_khong_chay_lai(tmp_path):
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    outcome = run_learning_round(
+        _round_cases(checkpoint_every_n_cases=2, checkpoint_store=store),
+        reflect=_reflect_by_trajectory(),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    latest = read_latest_checkpoint(store, _prefix())
+    assert latest is not None
+    assert latest.cases_done == ("c1", "c2", "c3", "c4")
+    calls = []
+
+    def reflect(
+        trajectories: Sequence[Trajectory], facts: Sequence[FactRead]
+    ) -> ReflectorResult:
+        calls.append(True)
+        return ReflectorResult(insights=())
+
+    resumed = run_learning_round(
+        _round_cases(resume_from=latest),
+        reflect=reflect,
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert calls == []
+    assert resumed.trajectories == outcome.trajectories
+    assert resumed.decisions == outcome.decisions
+    assert resumed.fact_rows == outcome.fact_rows
+
+
+def test_run_learning_round_resume_nap_lai_cache(tmp_path):
+    store = LocalCheckpointStore(tmp_path / "ckp")
+    cache = ResponseCache()
+    model = _CountingModel()
+    # Lần 1: đứt ở lô 2 sau khi lô 1 đã ghi checkpoint kèm mục đệm.
+    with pytest.raises(RuntimeError, match="đứt giữa chừng"):
+        run_learning_round(
+            _round_cases(checkpoint_every_n_cases=2, checkpoint_store=store, cache=cache),
+            reflect=_reflect_by_trajectory(cache=cache, model=model, fail_on=("c3",)),
+            measures_for=lambda candidate, delta: _measures(),
+            candidate_id_for=_candidate_ids(),
+        )
+    assert model.calls == 2
+    latest = read_latest_checkpoint(store, _prefix())
+    assert latest is not None
+    assert len(latest.cache_entries) == 2
+
+    # Lần 2: cache mới toanh; chạy tiếp nạp lại mục đệm, mô hình chỉ gọi cho c3, c4.
+    fresh_cache = ResponseCache()
+    resumed = run_learning_round(
+        _round_cases(
+            checkpoint_every_n_cases=2,
+            checkpoint_store=store,
+            resume_from=latest,
+            cache=fresh_cache,
+        ),
+        reflect=_reflect_by_trajectory(cache=fresh_cache, model=model),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert model.calls == 4
+    assert len(fresh_cache) == 4
+    assert len(resumed.fact_rows) == 4
+    # Mục đệm đã nạp dùng được ngay, không gọi lại mô hình.
+    assert (
+        fresh_cache.get_or_call(
+            "reflect:c1",
+            model_revision=MODEL_REVISION,
+            decode_params={},
+            json_schema={},
+            call=model,
+        )
+        == "phan-hoi"
+    )
+    assert model.calls == 4

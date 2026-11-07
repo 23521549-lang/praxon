@@ -13,6 +13,9 @@ dependencies = [
     "pydantic>=2.13,<3",
     "openai>=3.46,<4",
     "jsonschema>=4.26,<5",
+    # Client S3-compatible cho checkpoint (task 10.3): đẩy checkpoint sang
+    # Backblaze B2. Chỉ import trong adapters/ (xem adapters/s3_store.py).
+    "boto3>=1.43,<2",
 ]
 
 [tool.setuptools.packages.find]

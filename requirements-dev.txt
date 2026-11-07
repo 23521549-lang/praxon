@@ -16,3 +16,10 @@ types-jsonschema==4.26.0.20261006
 # Đọc XLSX cho lệnh đo F1 (task 6.5): chỉ dùng lúc đo, không vào cây phụ
 # thuộc runtime của core (MIT). Đọc bộ 104 câu trong tools/, không trong core.
 openpyxl==3.1.5
+# Mock S3 cho test checkpoint (task 10.3): test backend S3 mà không cần B2
+# thật (Apache-2.0). Chỉ dùng trong tests/, không vào cây phụ thuộc runtime.
+moto==5.2.5
+# Stub kiểu cho mypy (task 10.3): `boto3` không kèm py.typed, mypy strict
+# cần gói stub này để kiểm kiểu cho client S3 ở adapters/s3_store.py.
+# Chỉ dùng lúc kiểm kiểu, không vào cây phụ thuộc runtime của core.
+boto3-stubs==1.43.126

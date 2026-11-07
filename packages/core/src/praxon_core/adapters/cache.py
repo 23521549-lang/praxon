@@ -87,6 +87,24 @@ class ResponseCache:
         """Số mục đang lưu trong đệm."""
         return len(self._entries)
 
+    def export(self) -> dict[str, str]:
+        """Xuất toàn bộ mục đệm thành dict khóa → phản hồi.
+
+        Checkpoint (task 10.3) giữ dict này để khởi động lại không phải gọi
+        lại mô hình cho các prompt đã có phản hồi. Trả bản sao — sửa dict
+        trả về không chạm tới đệm.
+        """
+        return dict(self._entries)
+
+    def import_entries(self, entries: Mapping[str, str]) -> None:
+        """Nhập mục đệm từ dict khóa → phản hồi (khôi phục sau khi đứt, task 10.3).
+
+        Gộp vào các mục đã có: khóa đã có thì giá trị mới thay thế — cùng
+        một khóa là cùng một prompt + revision + params + schema nên phản
+        hồi phải giống nhau, ghi đè không đổi kết quả.
+        """
+        self._entries.update(entries)
+
     def clear(self) -> None:
         """Xóa toàn bộ mục trong đệm."""
         self._entries.clear()
