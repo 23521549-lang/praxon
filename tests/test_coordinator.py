@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -53,6 +54,7 @@ def _dt(text: str) -> datetime:
 
 def _episode(case_id: str, activity: str, occurred: str) -> EpisodeRow:
     return EpisodeRow(
+        id=UUID(EPISODE_ID),
         tenant_id="acme",
         case_id=case_id,
         payload={"activity": activity, "case_attributes": {}},

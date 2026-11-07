@@ -14,6 +14,7 @@ import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx2
 import openai
@@ -24,6 +25,7 @@ from praxon_core.adapters.language_model import (
     ModelCallError,
     OpenAICompatibleModel,
 )
+from praxon_core.learning.applier import build_fact_row
 from praxon_core.learning.candidate import FactStatus
 from praxon_core.learning.coordinator import (
     LearningRound,
@@ -31,7 +33,13 @@ from praxon_core.learning.coordinator import (
     ReflectorResult,
     run_learning_round,
 )
-from praxon_core.learning.curator import FactRead, InsightSource
+from praxon_core.learning.curator import (
+    DeltaKind,
+    FactRead,
+    InsightSource,
+    curate,
+    to_candidate,
+)
 from praxon_core.learning.declare_schema import (
     DECLARE_OUTPUT_SCHEMA,
     ReflectorOutputError,
@@ -77,13 +85,23 @@ def _trajectory(
     activities: Sequence[str],
     tenant_id: str = "acme",
     attributes: dict[str, Any] | None = None,
+    episode_ids: Sequence[UUID] | None = None,
 ) -> Trajectory:
-    """Một trajectory: case_id + dãy hoạt động theo thứ tự."""
+    """Một trajectory: case_id + dãy hoạt động theo thứ tự.
+
+    `episode_ids` không truyền thì sinh ngẫu nhiên (mỗi hoạt động một id
+    riêng) — chỉ test nào khẳng định bằng chứng mới cần id cố định.
+    """
     return Trajectory(
         tenant_id=tenant_id,
         case_id=case_id,
         activities=tuple(activities),
         attributes=attributes or {},
+        episode_ids=(
+            tuple(episode_ids)
+            if episode_ids is not None
+            else tuple(uuid4() for _ in activities)
+        ),
     )
 
 
@@ -231,7 +249,10 @@ def test_reflect_trace_tra_luat_thanh_insight():
     model, server = _model([canned])
     reflector = Reflector(model)
     result = reflector.reflect(
-        [_trajectory("c1", ["A", "B"]), _trajectory("c2", ["A", "C"])],
+        [
+            _trajectory("c1", ["A", "B"], episode_ids=(UUID(int=11), UUID(int=12))),
+            _trajectory("c2", ["A", "C"], episode_ids=(UUID(int=21), UUID(int=22))),
+        ],
         [_fact("response(X, Y)")],
     )
     assert len(server.calls) == 1
@@ -242,11 +263,144 @@ def test_reflect_trace_tra_luat_thanh_insight():
     for insight in result.insights:
         assert insight.source is InsightSource.TRACE
         assert insight.scope == "tenant"
-        # Bằng chứng rỗng: Trajectory không mang id episode (chỉ case_id),
-        # mà hợp đồng tầng áp đòi UUID episode — điền case_id vào sẽ vỡ
-        # build_fact_row khi candidate được duyệt tự động.
-        assert insight.evidence_episode_ids == []
+    # Bằng chứng là episode thể hiện mẫu của từng luật: response(A, B)
+    # chỉ lấy episode A/B của c1 (c2 không có B); precedence(A, C) chỉ
+    # lấy episode A/C của c2 (c1 không có C).
+    assert result.insights[0].evidence_episode_ids == [str(UUID(int=11)), str(UUID(int=12))]
+    assert result.insights[1].evidence_episode_ids == [str(UUID(int=21)), str(UUID(int=22))]
     assert (result.tokens_in, result.tokens_out) == (1, 1)
+
+
+def _reflect_evidence(
+    rules: Sequence[dict[str, Any]],
+    trajectories: Sequence[Trajectory],
+) -> list[list[str]]:
+    """Chạy reflect với luật ghi sẵn, trả evidence từng insight theo thứ tự."""
+    model, _server = _model([_rules_text(*rules)])
+    reflector = Reflector(model)
+    result = reflector.reflect(list(trajectories), [])
+    return [insight.evidence_episode_ids for insight in result.insights]
+
+
+def test_response_gan_episode_cua_a_roi_b_sau_a():
+    """response(A, B): lấy episode A đầu tiên + B đầu tiên sau A đó."""
+    ids = tuple(UUID(int=i) for i in range(1, 5))
+    evidence = _reflect_evidence(
+        [_rule()],
+        [_trajectory("c1", ["X", "A", "Y", "B"], episode_ids=ids)],
+    )
+    assert evidence == [[str(UUID(int=2)), str(UUID(int=4))]]
+
+
+def test_response_khong_b_sau_a_thi_khong_bang_chung():
+    """response(A, B): có A nhưng không có B sau A thì không có bằng chứng."""
+    evidence = _reflect_evidence(
+        [_rule()],
+        [_trajectory("c1", ["A", "X"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_response_b_truoc_a_thi_khong_bang_chung():
+    """response(A, B): B trước A không tính — cần B sau A."""
+    evidence = _reflect_evidence(
+        [_rule()],
+        [_trajectory("c1", ["B", "A"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_response_khong_co_a_thi_khong_bang_chung():
+    """response(A, B): không có A thì không có bằng chứng."""
+    evidence = _reflect_evidence(
+        [_rule()],
+        [_trajectory("c1", ["B", "C"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_precedence_gan_episode_cua_a_truoc_b():
+    """precedence(A, B): lấy episode A đầu tiên trước B đầu tiên."""
+    ids = tuple(UUID(int=i) for i in range(1, 5))
+    evidence = _reflect_evidence(
+        [_rule(template="precedence")],
+        [_trajectory("c1", ["X", "A", "Y", "B"], episode_ids=ids)],
+    )
+    assert evidence == [[str(UUID(int=2)), str(UUID(int=4))]]
+
+
+def test_precedence_a_sau_b_thi_khong_bang_chung():
+    """precedence(A, B): A sau B không tính — cần A trước B."""
+    evidence = _reflect_evidence(
+        [_rule(template="precedence")],
+        [_trajectory("c1", ["B", "A"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_precedence_khong_co_b_thi_khong_bang_chung():
+    """precedence(A, B): không có B thì không có bằng chứng."""
+    evidence = _reflect_evidence(
+        [_rule(template="precedence")],
+        [_trajectory("c1", ["A", "C"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_bang_chung_gom_tu_nhieu_trajectory_theo_thu_tu_lo():
+    """Luật thể hiện ở nhiều trajectory thì gom episode của từng trajectory theo thứ tự lô."""
+    evidence = _reflect_evidence(
+        [_rule()],
+        [
+            _trajectory("c1", ["A", "B"], episode_ids=(UUID(int=1), UUID(int=2))),
+            _trajectory("c2", ["A", "B"], episode_ids=(UUID(int=3), UUID(int=4))),
+        ],
+    )
+    assert evidence == [[str(UUID(int=i)) for i in range(1, 5)]]
+
+
+def test_luat_khong_trajectory_nao_the_hien_thi_bang_chung_rong():
+    """Luật không trajectory nào thể hiện mẫu: insight vẫn tạo, evidence rỗng."""
+    evidence = _reflect_evidence(
+        [_rule()],
+        [_trajectory("c1", ["X", "Y"], episode_ids=(UUID(int=1), UUID(int=2)))],
+    )
+    assert evidence == [[]]
+
+
+def test_trajectory_lech_activities_episode_ids_thi_tu_choi():
+    """Trajectory mà activities không khớp episode_ids thì từ chối ngay, không gắn thiếu."""
+    model, _server = _model([_rules_text(_rule())])
+    reflector = Reflector(model)
+    broken = Trajectory(
+        tenant_id="acme",
+        case_id="c1",
+        activities=("A", "B"),
+        attributes={},
+        episode_ids=(UUID(int=1),),
+    )
+    with pytest.raises(ValueError, match="không khớp episode_ids"):
+        reflector.reflect([broken], [])
+
+
+def test_round_trip_insight_mang_evidence_toi_fact():
+    """Insight mang evidence → Candidate → Fact mang đúng UUID episode."""
+    canned = _rules_text(_rule())
+    model, _server = _model([canned])
+    reflector = Reflector(model)
+    id_a, id_b = UUID(int=11), UUID(int=12)
+    result = reflector.reflect([_trajectory("c1", ["A", "B"], episode_ids=(id_a, id_b))], [])
+    assert len(result.insights) == 1
+    insight = result.insights[0]
+    assert insight.evidence_episode_ids == [str(id_a), str(id_b)]
+    deltas = curate(insight, [])
+    assert len(deltas) == 1
+    assert deltas[0].kind is DeltaKind.ADD
+    candidate = to_candidate(deltas[0], valid_start=datetime(2030, 1, 1, tzinfo=UTC))
+    assert candidate.evidence_episode_ids == [str(id_a), str(id_b)]
+    approved = candidate.model_copy(update={"status": "approved"})
+    row = build_fact_row(approved, candidate_id="cand-1", tenant_id="acme")
+    assert row.source_episode_ids == (id_a, id_b)
 
 
 def test_reflect_chia_lo_theo_batch_size():
@@ -380,9 +534,12 @@ def test_reflector_gui_dung_schema_cho_adapter():
     }
 
 
-def _episode(case_id: str, activity: str, occurred: str) -> EpisodeRow:
+def _episode(
+    case_id: str, activity: str, occurred: str, episode_id: UUID | None = None
+) -> EpisodeRow:
     """Một hàng episode tối thiểu cho vòng học qua coordinator."""
     return EpisodeRow(
+        id=episode_id if episode_id is not None else uuid4(),
         tenant_id="acme",
         case_id=case_id,
         payload={"activity": activity, "case_attributes": {}},
@@ -421,8 +578,8 @@ def test_reflector_khop_reflector_fn_cua_coordinator():
         LearningRound(
             tenant_id="acme",
             episode_rows=(
-                _episode("c1", "A", "2026-11-06T10:00:00"),
-                _episode("c1", "B", "2026-11-06T11:00:00"),
+                _episode("c1", "A", "2026-11-06T10:00:00", episode_id=UUID(int=11)),
+                _episode("c1", "B", "2026-11-06T11:00:00", episode_id=UUID(int=12)),
             ),
             facts=(),
             rule_table=default_rule_table(),
@@ -441,6 +598,7 @@ def test_reflector_khop_reflector_fn_cua_coordinator():
     )
     assert len(outcome.insights) == 1
     assert outcome.insights[0].canonical_key == "response(A, B)"
+    assert outcome.insights[0].evidence_episode_ids == [str(UUID(int=11)), str(UUID(int=12))]
     assert outcome.run_row.tokens_in == 1 and outcome.run_row.tokens_out == 1
 
 

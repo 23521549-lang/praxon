@@ -28,14 +28,13 @@ Quyết định thiết kế (ghi rõ để review):
 - Case trong lô là bằng chứng mô hình đã thấy (ghi trong prompt); kiểm
   đúng/sai từng luật là việc của Governor và phép đo (BĐ3), không phải
   của Reflector — nên Reflector không tính support từng luật.
-- `evidence_episode_ids` để RỖNG: hợp đồng ở tầng áp (fact/candidate dùng
-  cột `uuid[]`) đòi episode UUID, mà `Trajectory` chỉ mang `case_id`
-  (không mang id episode; `replay` không giữ lại) — điền `case_id` vào
-  sẽ vỡ `build_fact_row` (parse `UUID("c1")` lỗi) khi candidate được
-  duyệt tự động. "Case làm bằng chứng" (spec dòng 76) vẫn có trong
-  prompt (mô hình đã thấy case); gắn UUID episode vào Insight là việc
-  riêng của đường dữ liệu (cần `Trajectory` mang id episode), không
-  thuộc task này — không bịa UUID, không đổi `replay` lẫn vào đây.
+- `evidence_episode_ids` gắn id episode thật cho Insight từ trace: mỗi luật
+  mang id của các episode thể hiện mẫu của nó (tính từ `activities` +
+  `episode_ids` của trajectory — `response(A, B)` lấy episode của A rồi B
+  sau A; `precedence(A, B)` lấy episode của A trước B); luật nào không có
+  trajectory nào thể hiện mẫu thì evidence rỗng (mô hình có thể đã đề xuất
+  luật không có bằng chứng — Governor và phép đo sẽ loại). Đường tài liệu
+  vẫn để rỗng vì tài liệu không có episode làm bằng chứng.
 - `reflect` nhận lô rỗng (hoặc tài liệu rỗng) thì trả kết quả rỗng, không
   gọi mô hình — không có dữ liệu thì không có insight.
 - `seed` gắn lúc dựng Reflector (chữ ký `ReflectorFn` của coordinator
@@ -110,11 +109,12 @@ class Reflector:
         """Một lô trajectory thành Insight — khớp `ReflectorFn` của coordinator.
 
         Chia trajectory thành lô theo `batch_size`, mỗi lô một lần gọi mô
-        hình; Insight từ trace có `scope="tenant"`. `evidence_episode_ids`
-        để rỗng (xem quyết định thiết kế ở docstring module — Trajectory
-        không mang id episode). Lô rỗng thì trả kết quả rỗng, không gọi mô
-        hình. Một lô nào thất bại thì cả lần gọi này thất bại
-        (`ReflectorBatchError`) — không trả insight nửa vời.
+        hình; Insight từ trace có `scope="tenant"`. Mỗi Insight mang
+        `evidence_episode_ids` là id episode thể hiện mẫu của luật nó mang
+        (tính từ trajectory của lô — xem `_evidence_for_rule`); luật nào
+        không có trajectory nào thể hiện mẫu thì evidence rỗng. Lô rỗng thì
+        trả kết quả rỗng, không gọi mô hình. Một lô nào thất bại thì cả lần
+        gọi này thất bại (`ReflectorBatchError`) — không trả insight nửa vời.
         """
         ordered = tuple(trajectories)
         if not ordered:
@@ -132,7 +132,7 @@ class Reflector:
                     rules,
                     source=InsightSource.TRACE,
                     scope="tenant",
-                    evidence_episode_ids=[],
+                    trajectories=batch,
                     cap=self._max_insights_per_batch,
                 )
             )
@@ -161,7 +161,6 @@ class Reflector:
             rules,
             source=InsightSource.DOCUMENT,
             scope=scope,
-            evidence_episode_ids=[],
             cap=self._max_insights_per_batch,
         )
         return ReflectorResult(insights=insights, tokens_in=tokens_in, tokens_out=tokens_out)
@@ -263,15 +262,73 @@ def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
     )
 
 
+def _evidence_for_rule(rule: DeclareRule, trajectories: Sequence[Trajectory]) -> list[str]:
+    """Id episode thể hiện mẫu của một luật, theo thứ tự trajectory trong lô.
+
+    Chỉ episode nào thực sự thể hiện mẫu mới được gắn (tiêu chí (a) của đề
+    xuất): `response(A, B)` lấy episode của A đầu tiên rồi B đầu tiên sau
+    A đó; `precedence(A, B)` lấy episode của A đầu tiên trước B đầu tiên.
+    Mỗi trajectory đóng góp tối đa 2 id (một cặp A/B); trajectory nào
+    không thể hiện mẫu thì không đóng góp. Mẫu lạ (ngoài tầng 1) thì không
+    có evidence — schema 6.2 chỉ cho `response`/`precedence` nên trường
+    hợp này không xảy ra ở đường chính, chỉ phòng thủ.
+
+    `activities` và `episode_ids` của một trajectory phải cùng độ dài
+    (`replay` giữ khớp từng vị trí); lệch thì ValueError ngay — bằng
+    chứng sai hình dạng phải lộ ra, không im lặng gắn thiếu.
+    """
+    evidence: list[str] = []
+    for trajectory in trajectories:
+        activities = trajectory.activities
+        episode_ids = trajectory.episode_ids
+        if len(activities) != len(episode_ids):
+            raise ValueError(
+                f"trajectory {trajectory.case_id}: activities ({len(activities)}) "
+                f"không khớp episode_ids ({len(episode_ids)})"
+            )
+        pair: tuple[int, int] | None = None
+        if rule.template == "response":
+            try:
+                first_a = activities.index(rule.activation)
+            except ValueError:
+                continue
+            for j in range(first_a + 1, len(activities)):
+                if activities[j] == rule.target:
+                    pair = (first_a, j)
+                    break
+        elif rule.template == "precedence":
+            try:
+                first_b = activities.index(rule.target)
+            except ValueError:
+                continue
+            for i in range(first_b):
+                if activities[i] == rule.activation:
+                    pair = (i, first_b)
+                    break
+        if pair is None:
+            continue
+        for index in pair:
+            episode_id = str(episode_ids[index])
+            if episode_id not in evidence:
+                evidence.append(episode_id)
+    return evidence
+
+
 def _rules_to_insights(
     rules: Sequence[DeclareRule],
     *,
     source: InsightSource,
     scope: str,
-    evidence_episode_ids: Sequence[str],
+    trajectories: Sequence[Trajectory] = (),
     cap: int,
 ) -> tuple[Insight, ...]:
-    """Luật thành Insight, cắt ở trần — giữ thứ tự mô hình trả về."""
+    """Luật thành Insight, cắt ở trần — giữ thứ tự mô hình trả về.
+
+    Mỗi Insight mang `evidence_episode_ids` riêng: id episode thể hiện
+    mẫu của chính luật đó (tính từ `trajectories` — xem
+    `_evidence_for_rule`). Đường tài liệu không truyền trajectory nên
+    evidence rỗng (tài liệu không có episode làm bằng chứng).
+    """
     kept = rules[:cap]
     return tuple(
         Insight(
@@ -279,7 +336,7 @@ def _rules_to_insights(
             activation=rule.activation,
             target=rule.target,
             condition=rule.condition_string,
-            evidence_episode_ids=list(evidence_episode_ids),
+            evidence_episode_ids=_evidence_for_rule(rule, trajectories),
             source=source,
             scope=scope,
         )
