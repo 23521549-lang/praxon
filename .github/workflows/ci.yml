@@ -138,19 +138,42 @@ jobs:
       - name: Cài hai gói ở chế độ editable
         run: python -m pip install -e packages/core -e packages/platform
 
+      # Lấy dữ liệu BPIC 2015 vào volume cache TRƯỚC khi smoke chạy: bước 3
+      # của run_all (`_ensure_bpic_data`) tải 5 file XES từ ndownloader chính
+      # thức, mà ndownloader đã chết 504 từ 6/11 — smoke chết ngay ở đây
+      # (run 42396222354). Tool `ci_fetch_bpic2015` có fallback Drive đã
+      # kiểm live, nên chạy nó trong service `eval` để ghi đúng volume
+      # `praxon_cache` mà `run_phase1` sẽ đọc. `--entrypoint python` vì
+      # ENTRYPOINT của image là `run_all`, không phải python thường;
+      # `--no-deps` vì fetch không cần db/model/proxy. Hai giá trị `dummy`
+      # không phải credential: chỉ để nội suy compose (service db/model/
+      # llm-proxy bắt `POSTGRES_PASSWORD`/`PRAXON_LLM_API_KEY` bằng `:?`),
+      # bước này chạy trước wrapper nên chưa có `.env` nào.
+      - name: Máy trống — lấy dữ liệu BPIC 2015 vào volume cache
+        env:
+          PRAXON_BPIC2015_FALLBACK_URL: ${{ vars.PRAXON_BPIC2015_FALLBACK_URL }}
+          POSTGRES_PASSWORD: dummy
+          PRAXON_LLM_API_KEY: dummy
+        run: docker compose run --no-deps --entrypoint python -e PRAXON_BPIC2015_FALLBACK_URL eval -m tools.ci_fetch_bpic2015 --dataset all --cache-dir /root/.cache/praxon/bpic2015
+
       - name: Máy trống (smoke) — lần chạy 1
         run: python -m tools.run_phase1 --smoke --out out1
 
       - name: Máy trống (smoke) — log khi lần chạy 1 lỗi
         if: failure()
-        run: docker compose logs model llm-proxy db
+        # Giá trị giả chỉ để nội suy compose (`PRAXON_LLM_API_KEY` bắt bằng
+        # `:?` ở service model/llm-proxy; khóa một lần chỉ sống trong env
+        # tiến trình con của wrapper nên shell workflow không có). Lệnh log
+        # không khởi động container nên không dùng khóa thật.
+        run: PRAXON_LLM_API_KEY=dummy POSTGRES_PASSWORD=dummy docker compose logs model llm-proxy db
 
       - name: Máy trống (smoke) — lần chạy 2
         run: python -m tools.run_phase1 --smoke --out out2
 
       - name: Máy trống (smoke) — log khi lần chạy 2 lỗi
         if: failure()
-        run: docker compose logs model llm-proxy db
+        # Giá trị giả chỉ để nội suy compose (xem chú thích ở bước log lần 1).
+        run: PRAXON_LLM_API_KEY=dummy POSTGRES_PASSWORD=dummy docker compose logs model llm-proxy db
 
       - name: Máy trống (smoke) — so hai lần chạy
         run: python -m praxon_core.eval.run_all --compare out1/phase1-report.json out2/phase1-report.json
