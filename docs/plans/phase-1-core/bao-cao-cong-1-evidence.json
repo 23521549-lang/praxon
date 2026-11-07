@@ -1,0 +1,92 @@
+{
+  "conditions": [
+    {
+      "command": "<lệnh 13.1, điền khi có>",
+      "id": "C1",
+      "measured_at": null,
+      "measured_at_commit": null,
+      "open_items": [
+        "task 13.1 chưa làm"
+      ],
+      "run_id_or_url": null,
+      "test_or_number": "lệnh 13.1 chạy từ máy trống qua compose, thoát 0, in đủ 7 điều kiện x 2 nguồn",
+      "verdict": "CHUA_DU"
+    },
+    {
+      "command": "<lệnh 13.1, điền khi có>",
+      "id": "C2",
+      "measured_at": null,
+      "measured_at_commit": null,
+      "open_items": [
+        "task 13.1 chưa làm"
+      ],
+      "run_id_or_url": null,
+      "test_or_number": "bốn chỉ số theo tenant kèm CI 95% + bản ghi lần chạy, từ đầu ra lệnh 13.1",
+      "verdict": "CHUA_DU"
+    },
+    {
+      "command": "<lệnh 13.1, điền khi có>",
+      "id": "C3",
+      "measured_at": null,
+      "measured_at_commit": null,
+      "open_items": [
+        "task 13.1 chưa làm",
+        "task 12.3 chưa làm"
+      ],
+      "run_id_or_url": null,
+      "test_or_number": "chạy lệnh 13.1 hai lần, so đầu ra; reproducibility_gaps rỗng",
+      "verdict": "CHUA_DU"
+    },
+    {
+      "command": "python -m pytest tests/integration/test_invariants.py",
+      "id": "C4",
+      "measured_at": "2026-11-07",
+      "measured_at_commit": "3c27472",
+      "measured_number": 25,
+      "open_items": [
+        "Thuận quyết số 21/25: cập nhật plan/spec thành 25 hay thu hẹp định nghĩa tấn công"
+      ],
+      "plan_number": 21,
+      "run_id_or_url": null,
+      "test_or_number": "25/25 phép tấn công bị chặn (34/34 test trong file)",
+      "total_tests": 34,
+      "verdict": "DAT"
+    },
+    {
+      "command": "11 cổng máy (xem Phụ lục của bao-cao-cong-1.md)",
+      "id": "C5",
+      "local": {
+        "gates_passed": 11,
+        "perf_passed": 1,
+        "pytest_passed": 718
+      },
+      "measured_at": "2026-11-07",
+      "measured_at_commit": "3c27472",
+      "open_items": [
+        "sửa CI (task riêng, cần đề xuất riêng)",
+        "một lần chạy CI xanh trên HEAD"
+      ],
+      "run_id_or_url": "https://github.com/23521549-lang/praxon/actions/runs/42368407153",
+      "test_or_number": "tại chỗ: 11/11 cổng máy xanh, pytest 718 passed + perf 1 passed; GitHub: ĐỎ (run 42368407153, đúng 1 test test_main_real_m1 thiếu dữ liệu BPIC 2015 trên runner)",
+      "verdict": "CHUA_DU"
+    },
+    {
+      "command": "python -m pytest tests/integration/test_event_log.py tests/test_tool_gateway.py tests/test_human_decision.py",
+      "counts": {
+        "tests/integration/test_event_log.py": 7,
+        "tests/test_human_decision.py": 7,
+        "tests/test_tool_gateway.py": 9
+      },
+      "id": "C6",
+      "measured_at": "2026-11-07",
+      "measured_at_commit": "3c27472",
+      "open_items": [],
+      "run_id_or_url": null,
+      "test_or_number": "23 test qua: bảng event 7, ToolGateway 9 (từ 6 hàm test, 1 hàm tham số hóa 4 quyết định), quyết định người dùng thành Candidate 7",
+      "verdict": "DAT"
+    }
+  ],
+  "head_commit": "3c27472",
+  "report_status": "DRAFT",
+  "written_at": "2026-11-07"
+}
