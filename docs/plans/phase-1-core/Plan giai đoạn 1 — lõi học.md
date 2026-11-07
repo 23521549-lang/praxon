@@ -16,7 +16,7 @@ Lấy nguyên từ lộ trình, không diễn giải thêm:
 1. Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu.
 2. In bốn chỉ số theo từng tenant kèm khoảng tin cậy và bản ghi lần chạy.
 3. Chạy lại ra đúng kết quả đó.
-4. 21 phép tấn công bị chặn.
+4. 25 phép tấn công bị chặn.
 5. CI xanh ở mọi cổng máy.
 6. Ba nền móng phòng điều khiển có test.
 
@@ -27,7 +27,7 @@ Plan con là đơn vị review, tuần là khẩu phần — nên plan con chia 
 | # | Plan con | Tuần | Cổng ra của plan con | Cắt được không |
 | --- | --- | --- | --- | --- |
 | 1 | Nền móng kho và cổng máy | 1 | Mọi cổng máy chạy, và mỗi cổng có một test âm chứng minh nó thật sự chặn | Không bao giờ |
-| 2 | Lược đồ và bất biến dữ liệu | 1 | 21/21 phép tấn công bị chặn dưới vai ứng dụng; một tệp compose dựng cả hệ | Không bao giờ |
+| 2 | Lược đồ và bất biến dữ liệu | 1 | 25/25 phép tấn công bị chặn dưới vai ứng dụng; một tệp compose dựng cả hệ | Không bao giờ |
 | 3 | Hồ sơ dữ liệu và phép chia | 1 | Một lệnh sinh bảng hồ sơ năm đô thị, chạy lại ra đúng bảng | Không bao giờ |
 | 4 | Khám phá Declare | 2 | Dưới 30 giây trên log giả cỡ đô thị 1 khi không lọc trước; trùng tập luật với bản duyệt thẳng và với pm4py ngoài kho | Không bao giờ |
 | 5 | Bộ sinh bán tổng hợp | 2 | Qua nghiệm thu: khám phá trên 300 trace *không* đúng tuyệt đối so với đáp án | Không bao giờ |
@@ -78,7 +78,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 ## Plan con 2 — Lược đồ và bất biến dữ liệu
 
 **Tuần:** 1 · **Mục tiêu:** sáu bất biến dữ liệu của spec do cơ sở dữ liệu chặn, không do mã nhớ phải chặn.
-**Cổng ra:** 21/21 phép tấn công bị chặn, chạy dưới đúng vai ứng dụng — không bao giờ dưới tài khoản quản trị.
+**Cổng ra:** 25/25 phép tấn công bị chặn, chạy dưới đúng vai ứng dụng — không bao giờ dưới tài khoản quản trị.
 **Bất biến chạm tới:** `episode` và `event` chỉ thêm; chỉ `applier` và `promoter` ghi tri thức; chỉ `promoter` ghi `global`; không hai fact cùng khóa cùng hiệu lực; áp candidate lũy đẳng.
 **Phụ thuộc:** plan con 1.
 **Thứ tự cắt:** không cắt gì.
@@ -89,7 +89,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | 2.2 | Migration các bảng `episode`, `fact`, `candidate`, `run`, `event`; các vai `ingestor`, `applier`, `promoter`, `reader` | Migration chạy từ cơ sở dữ liệu trống; chạy lần hai là lũy đẳng, không lỗi | xong | chưa review |
 | 2.3 | RLS `ENABLE` và `FORCE` trên mọi bảng có dữ liệu tenant; policy cho tenant đọc hàng của mình cộng hàng `global`; chưa đặt tenant thì 0 hàng | Test: đọc chéo tenant ra 0 hàng; chưa đặt tenant ra 0 hàng; truy vấn `pg_roles` xác nhận không vai nào superuser hay `BYPASSRLS` | xong | chưa review |
 | 2.4 | Quyền chỉ thêm trên `episode` và `event`; exclusion constraint trên `(scope, canonical_key, valid_during, known_during)`; unique trên `candidate_id` | Test: UPDATE và DELETE bị từ chối trên hai bảng; thêm fact trùng khóa trùng hiệu lực bị từ chối; áp lại cùng candidate không tạo hàng thứ hai | xong | chưa review |
-| 2.5 | Bộ 21 phép tấn công thành test tích hợp | `pytest tests/integration/test_invariants.py` xanh, 21/21 bị chặn | xong | chưa review |
+| 2.5 | Bộ 25 phép tấn công thành test tích hợp | `pytest tests/integration/test_invariants.py` xanh, 25/25 bị chặn | xong | chưa review |
 
 **Review plan con 2** — ngày: · người review: · kết luận:
 

@@ -201,7 +201,7 @@ Mọi mục dưới đây đều có một cách kiểm tự động đi kèm.
 | Truy cập dữ liệu | Chỉ qua module repository | import-linter cấm driver cơ sở dữ liệu ngoài `repositories` |
 | Giấy phép phụ thuộc | Core không phụ thuộc thư viện AGPL hay không có giấy phép | pip-licenses trong CI, khớp một phần theo từ khóa AGPL, GPL và UNKNOWN vì mỗi gói khai một kiểu; chạy trần, không qua ống dẫn, vì ống dẫn nuốt mã thoát |
 | Cách ly tenant | RLS trong cơ sở dữ liệu | Bộ test tích hợp chạy dưới đúng vai ứng dụng, không bao giờ dưới tài khoản quản trị |
-| Bất biến dữ liệu | Quyền theo vai, exclusion constraint, ràng buộc duy nhất | Cùng bộ test tích hợp: 21 phép tấn công phải bị chặn |
+| Bất biến dữ liệu | Quyền theo vai, exclusion constraint, ràng buộc duy nhất | Cùng bộ test tích hợp: 25 phép tấn công phải bị chặn |
 | Kiểu dữ liệu | Chú thích kiểu đầy đủ; `Trajectory`, `Insight`, `Delta`, `Candidate`, `Decision` là kiểu có khai báo | mypy strict trên `core` |
 | Cấu hình | Một đối tượng settings có kiểu, nạp từ một tệp | Bước CI tìm os.environ và getenv ngoài module settings; import-linter không chặn được thuộc tính nên không dùng nó cho việc này |
 | Định dạng và lint | ruff, ruff format | CI gate |
