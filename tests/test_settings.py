@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from praxon_core.learning.coordinator import (
+    _CONFIG_HASH_EXCLUDED,
     compute_config_hash,
     compute_config_hash_without_budget,
 )
@@ -203,3 +204,32 @@ def test_doi_tran_doi_config_hash_nhung_khong_doi_hash_tru_tran(tmp_path):
     assert compute_config_hash_without_budget(nang_tran) == compute_config_hash_without_budget(
         settings
     )
+
+
+def test_config_hash_bao_dung_dung_13_truong_va_loai_dung_6_truong():
+    # Task 12.1 (R3): pin tập trường lọt hash + tập trường loại. Thêm một
+    # trường Settings mới thì test này đỏ, buộc review có chủ ý xem trường
+    # mới có ảnh hưởng kết quả không (lọt hash theo mặc định) hay phải loại.
+    assert set(_CONFIG_HASH_EXCLUDED) == {
+        "database_url",
+        "openai_api_key",
+        "s3_endpoint_url",
+        "s3_bucket",
+        "s3_access_key_id",
+        "s3_secret_access_key",
+    }
+    assert set(Settings.model_fields) - set(_CONFIG_HASH_EXCLUDED) == {
+        "bootstrap_draws",
+        "openai_base_url",
+        "cpu_model_base_url",
+        "model_id",
+        "model_revision",
+        "model_max_retries",
+        "model_retry_base_delay_seconds",
+        "reflector_batch_size",
+        "reflector_max_insights_per_batch",
+        "checkpoint_every_n_cases",
+        "checkpoint_store",
+        "token_budget_total",
+        "token_budget_reserve_per_call",
+    }

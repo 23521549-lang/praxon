@@ -1,0 +1,21 @@
+# Cấu hình chạy phần đo (task 12.1, spec dòng 152).
+# CHƯA KHÓA - giá trị tạm để test chạy được; KHÔNG dùng để chạy đo thật.
+# Khóa thật chỉ làm ở bước riêng sau khi checklist tiền khóa (đề xuất 12.1,
+# Phụ lục A.3) đủ: 11.1 chốt engine/model + trần token + nơi lưu checkpoint.
+# Sáu trường nhạy cảm KHÔNG có trong file này (database_url, openai_api_key
+# và bốn trường S3): driver lấy chúng từ biến môi trường lúc chạy; chúng
+# đã loại khỏi config_hash nên xoay khóa hay đổi DB không đổi hash.
+
+bootstrap_draws = 1000
+openai_base_url = "http://localhost:8080/v1"
+cpu_model_base_url = "http://localhost:8080/v1"
+model_id = "Qwen/Qwen3-8B-GGUF"
+model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
+model_max_retries = 3
+model_retry_base_delay_seconds = 1.0
+reflector_batch_size = 10
+reflector_max_insights_per_batch = 20
+checkpoint_every_n_cases = 100
+checkpoint_store = "local"
+token_budget_total = 0
+token_budget_reserve_per_call = 2048
