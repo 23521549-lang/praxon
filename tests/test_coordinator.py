@@ -142,6 +142,8 @@ def _round(
     config_hash: str = CONFIG_HASH,
     locked_config_hash: str | None = None,
     on_test_split: bool = False,
+    is_rerun: bool = False,
+    repro_gaps: tuple[str, ...] = (),
 ) -> LearningRound:
     return LearningRound(
         tenant_id="acme",
@@ -162,6 +164,8 @@ def _round(
         wall_time=1.5,
         locked_config_hash=locked_config_hash,
         on_test_split=on_test_split,
+        is_rerun=is_rerun,
+        repro_gaps=repro_gaps,
     )
 
 
@@ -307,6 +311,56 @@ def test_check_test_split_lock_khop_khoa_thi_cho_chay():
 def test_check_test_split_lock_khac_khoa_thi_tu_choi():
     with pytest.raises(ValueError, match="không được chạy trên phần đo"):
         check_test_split_lock(config_hash=CONFIG_HASH, locked_config_hash="0" * 64)
+
+
+def test_rerun_gap_rong_ghi_reproducible():
+    # Task 12.3: chạy lại đủ sáu điều kiện thì hàng `run` ghi `reproducible`.
+    outcome = run_learning_round(
+        _round(
+            locked_config_hash=CONFIG_HASH,
+            on_test_split=True,
+            is_rerun=True,
+            repro_gaps=(),
+        ),
+        reflect=_reflector([]),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert outcome.run_row.reproducibility == "reproducible"
+    assert outcome.run_row.repro_gaps == ""
+
+
+def test_rerun_co_gap_ghi_not_reproducible():
+    # Task 12.3: chạy lại thiếu điều kiện thì hàng `run` ghi
+    # `not_reproducible` + đúng tên gap, nối bằng dấu phẩy.
+    outcome = run_learning_round(
+        _round(
+            locked_config_hash=CONFIG_HASH,
+            on_test_split=True,
+            is_rerun=True,
+            repro_gaps=("cache", "code_commit"),
+        ),
+        reflect=_reflector([]),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert outcome.run_row.reproducibility == "not_reproducible"
+    assert outcome.run_row.repro_gaps == "cache,code_commit"
+
+
+def test_vong_thuong_khong_co_verdict_tai_lap():
+    # Task 12.3: lần chạy thường (không phải chạy lại) thì verdict NULL.
+    outcome = run_learning_round(
+        _round(),
+        reflect=_reflector([]),
+        measures_for=lambda candidate, delta: _measures(),
+        candidate_id_for=_candidate_ids(),
+    )
+    assert outcome.run_row.status == "succeeded"
+    assert outcome.run_row.reproducibility is None
+    assert outcome.run_row.repro_gaps == ""
 
 
 def test_run_learning_round_add_toan_cuc():
