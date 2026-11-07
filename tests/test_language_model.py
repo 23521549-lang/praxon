@@ -355,6 +355,19 @@ def test_factory_tat_vong_thu_lai_cua_sdk():
     assert len(server.calls) == 1
 
 
+def test_factory_truyen_timeout_tu_settings():
+    # Factory phải truyền timeout từ Settings vào client SDK — mặc định
+    # 1800 giây (task 9.1: tường mặc định 600 giây giết đoạn Wabo dài
+    # sinh ~690 giây). Chứng minh bằng timeout của client đã dựng;
+    # giá trị khác trong Settings phải chảy tới đúng client đó.
+    settings = Settings(database_url="<redacted>")
+    model = model_from_settings(settings, backend="cpu")
+    assert model._client.timeout == 1800.0
+    settings = Settings(database_url="<redacted>", model_timeout_seconds=42.0)
+    model = model_from_settings(settings, backend="cpu")
+    assert model._client.timeout == 42.0
+
+
 def test_phan_hoi_rong_bi_tu_choi():
     # Server trả 200 nhưng không có lựa chọn nào: sai hợp đồng, báo hỏng.
     server = _FakeServer(

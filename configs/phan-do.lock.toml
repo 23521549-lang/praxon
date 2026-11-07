@@ -6,7 +6,7 @@
 # locked_config_hash dưới đây là hash thật tính từ configs/phan-do.toml
 # tạm (để test file-khớp-hash chạy được); lock_commit, code_commit và
 # data_hash đang là toàn số 0 vì chưa có bước khóa thật nào.
-locked_config_hash = "f47f0829190ae06a9edc8bc288d8eedda588bdcb80f90df29c14e8889c4d4089"
+locked_config_hash = "4ef1fc08e0c2d63f3b86a1d00386faf629955660fedef8ab37cbf60bebfd133c"
 lock_commit = "0000000000000000000000000000000000000000"
 code_commit = "0000000000000000000000000000000000000000"
 seed = 0

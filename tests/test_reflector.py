@@ -271,6 +271,20 @@ def test_reflect_trace_tra_luat_thanh_insight():
     assert (result.tokens_in, result.tokens_out) == (1, 1)
 
 
+def test_reflect_document_khong_truyen_max_tokens():
+    # Hồi quy task 9.1: Reflector KHÔNG giới hạn max_tokens — đoạn Wabo
+    # dài phải sinh tới hết; cắt giữa chừng làm JSON dở dang, parse hỏng.
+    # Chứng minh ở thân yêu cầu thật gửi tới server giả: không có khóa
+    # `max_tokens` (adapter chỉ đưa khóa này khi khác None).
+    canned = _rules_text(_rule())
+    model, server = _model([canned])
+    reflector = Reflector(model)
+    result = reflector.reflect_document("Artikel 1. De aanvrager dient een aanvraag in.", [])
+    assert len(result.insights) == 1
+    body = json.loads(server.calls[0].content.decode("utf-8"))
+    assert "max_tokens" not in body
+
+
 def _reflect_evidence(
     rules: Sequence[dict[str, Any]],
     trajectories: Sequence[Trajectory],

@@ -206,10 +206,19 @@ def test_doi_tran_doi_config_hash_nhung_khong_doi_hash_tru_tran(tmp_path):
     )
 
 
-def test_config_hash_bao_dung_dung_13_truong_va_loai_dung_6_truong():
+def test_ghi_de_timeout_qua_bien_moi_truong(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_PREFIX + "MODEL_TIMEOUT_SECONDS", "42")
+    path = _write(tmp_path, 'database_url = "x"\n')
+    settings = load_settings(path)
+    assert settings.model_timeout_seconds == 42.0
+
+
+def test_config_hash_bao_dung_dung_14_truong_va_loai_dung_6_truong():
     # Task 12.1 (R3): pin tập trường lọt hash + tập trường loại. Thêm một
     # trường Settings mới thì test này đỏ, buộc review có chủ ý xem trường
     # mới có ảnh hưởng kết quả không (lọt hash theo mặc định) hay phải loại.
+    # `model_timeout_seconds` (task 9.1) lọt hash: đổi timeout đổi kết quả
+    # đo — đoạn dài trước đây timeout thì nay sinh tới hết.
     assert set(_CONFIG_HASH_EXCLUDED) == {
         "database_url",
         "openai_api_key",
@@ -226,6 +235,7 @@ def test_config_hash_bao_dung_dung_13_truong_va_loai_dung_6_truong():
         "model_revision",
         "model_max_retries",
         "model_retry_base_delay_seconds",
+        "model_timeout_seconds",
         "reflector_batch_size",
         "reflector_max_insights_per_batch",
         "checkpoint_every_n_cases",

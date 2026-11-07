@@ -99,6 +99,19 @@ class Settings(BaseModel):
     test hợp đồng truyền 0,0 để không chờ thật.
     """
 
+    model_timeout_seconds: float = 1800.0
+    """Timeout (giây) của một lần gọi mô hình (task 9.1).
+
+    SDK `openai` mặc định timeout 600 giây; đoạn Wabo dài sinh ~4146 token
+    ở 5-7 token/giây cần ~690 giây nên lần gọi nào cũng chết đúng tường
+    600 giây (đo 9.1 hỏng EXIT:2 ngày 7/11/2026). Mặc định 1800 giây —
+    đủ cho chặn trên sinh (~6900 token trong ctx 8192 trừ prompt ~1300)
+    ở tốc độ chậm nhất quan sát (5 token/giây cần 1380 giây, dư ~30%).
+    Trường này lọt vào `config_hash` (đổi timeout đổi kết quả đo) nên
+    phải chốt TRƯỚC commit khóa thật 12.1. Ghi đè trong tệp TOML hoặc
+    biến môi trường `PRAXON_MODEL_TIMEOUT_SECONDS` khi cần.
+    """
+
     reflector_batch_size: int = 10
     """Số trajectory mỗi lô Reflector (task 6.4, BĐ4 spec dòng 89).
 
