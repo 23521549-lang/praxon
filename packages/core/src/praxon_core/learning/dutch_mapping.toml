@@ -1,0 +1,296 @@
+# Bang gan khai niem tieng Ha Lan (Wabo) voi ten hoat dong trong log BPIC 2015 (task 9.2).
+#
+# Nguon van ban: wetten.nl, Wabo BWBR0024779, ban 2015-01-01 (co hieu luc
+# 01-01-2015–31-03-2015; Wabo co hieu luc 01-10-2010–31-12-2023). Tai ve cache
+# ngoai kho ~/.cache/praxon/wabo/wabo-2015-01-01.html (977.356 byte, SHA-256
+# 0e4d66c6deb597b631bcf6be86d3452691edc0a42d4256af2810c55b5766db38); KHONG
+# commit van ban vao kho. Ten hoat dong (activityNameNL) va tan suat (events)
+# do tu 5 log BPIC 2015 trong cache (~/.cache/praxon/bpic2015, 262.628 su kien);
+# chi cac code co DUNG MOT ten NL tren ca 5 do thi moi duoc gan (478/500 code on
+# dinh; 22 code co nhieu ten NL theo do thi bi loai khoi bang).
+#
+# Quy tac gan: moi muc la mot buoc thu tuc trong Wabo (khai niem XUAT HIEN trong
+# van ban, wabo_count la so lan xuat hien dem tu van ban da tai) anh xa sang cac
+# hoat dong log thuc hien dung buoc do (ten NL on dinh). 'canonical' la code
+# dai dien cho buoc do (su kien xay ra, khong phai buoc dang ky ngay / ghi so);
+# ly do chon ghi trong note tung muc. Khai niem khong gan duoc ghi o [unmapped]
+# kem ly do, KHONG bia gan.
+
+[wabo]
+source_url = "https://wetten.overheid.nl/BWBR0024779/2015-01-01"
+version = "2015-01-01"
+valid_during = "2015-01-01/2015-03-31"
+sha256_html = "0e4d66c6deb597b631bcf6be86d3452691edc0a42d4256af2810c55b5766db38"
+
+[[concept]]
+term = "aanvraag"
+wabo_count = 139
+log_phrase = "aanvraag ontvangen / binnenkomst aanvraag"
+canonical = "01_HOOFD_015"
+note = "Chi hai code tiep nhan (dang ky ngay nhan + giai doan da nhan); 13 code 'aanvraag' khac la cac buoc kiem tra sau (volledig / ontvankelijk / gefaseerd), khong phai su den cua don."
+activities = [
+  { code = "01_HOOFD_010", dutch_name = "registratie datum binnenkomst aanvraag", events = 5644 },
+  { code = "01_HOOFD_015", dutch_name = "fase aanvraag ontvangen", events = 5644 },
+]
+
+[[concept]]
+term = "ontwerpbesluit"
+wabo_count = 6
+canonical = "01_HOOFD_440_1"
+note = "Chi ba code LA quyet dinh du thao (tao / dang ky ngay / giai doan da ban hanh); cac code chi nhac den du thao o buoc ha luu (zienswijze / publicatie / ter inzage) khong thuoc tap nay."
+activities = [
+  { code = "01_HOOFD_440_1", dutch_name = "aanmaken ontwerpbesluit omgevingsvergunning", events = 526 },
+  { code = "01_HOOFD_460", dutch_name = "registreren datum ontwerpbesluit omgevingsvergunning", events = 500 },
+  { code = "01_HOOFD_465", dutch_name = "fase ontwerpbesluit genomen", events = 500 },
+]
+
+[[concept]]
+term = "ter inzage"
+wabo_count = 4
+canonical = "10_UOV_010"
+note = "Loại 01_HOOFD_080 'datum ter inzage MER' (ve bao cao danh gia tac dong moi truong, khong phai quyet dinh cap phep)."
+activities = [
+  { code = "10_UOV_010", dutch_name = "ontwerpbeschikking ter inzage leggen", events = 489 },
+  { code = "10_UOV_030", dutch_name = "datum ontwerpbeschikking ter inzage", events = 444 },
+  { code = "10_UOV_030a", dutch_name = "instellen besluitfase: ontwerpbesluit vergunnen ter inzage", events = 158 },
+  { code = "01_HOOFD_516", dutch_name = "datum beschikking ter inzage", events = 586 },
+  { code = "01_HOOFD_516a", dutch_name = "instellen besluitfase:besluit vergunnen ter inzage", events = 153 },
+]
+
+[[concept]]
+term = "zienswijze"
+wabo_count = 7
+canonical = "10_UOV_060"
+note = "Tap day du 17 code co ten chua 'zienswijze'. Canonical la y kien DA nhan ve du thao (10_UOV_060), khong phai code hoi y kien nhieu nhat (01_HOOFD_430, 4177 lan — do la buoc HOI, khong phai y kien)."
+activities = [
+  { code = "01_HOOFD_430", dutch_name = "belanghebbenden zienswijzen vragen", events = 4177 },
+  { code = "10_UOV_060", dutch_name = "zienswijze op ontwerpbesluit omgevingsvergunning ontvangen", events = 452 },
+  { code = "10_UOV_065", dutch_name = "fase zienswijze ingediend", events = 53 },
+  { code = "10_UOV_070", dutch_name = "zienswijze van GS of VROM mbt ontwerpbesluit ontvangen", events = 60 },
+  { code = "10_UOV_120", dutch_name = "zienswijze mbt ontwerpbesluit gegrond", events = 59 },
+  { code = "10_UOV_100", dutch_name = "deelzaak zienswijze afgerond", events = 50 },
+  { code = "10_UOV_020", dutch_name = "termijn zienswijze op ontwerpbesluit", events = 37 },
+  { code = "10_UOV_061", dutch_name = "behandelen deelzaak zienswijze", events = 36 },
+  { code = "10_UOV_066", dutch_name = "fase zienswijze ingediend", events = 9 },
+  { code = "10_UOV_140", dutch_name = "aangepast plan na zienswijze", events = 9 },
+  { code = "10_UOV_061_2", dutch_name = "deelzaak zienswijze afgerond", events = 8 },
+  { code = "10_UOV_075", dutch_name = "fase zienswijze ingediend", events = 8 },
+  { code = "10_UOV_076", dutch_name = "zienswijze van GS of VROM mbt ontwerpbesluit ontvangen", events = 8 },
+  { code = "10_UOV_031", dutch_name = "termijn tot zienswijze", events = 6 },
+  { code = "10_UOV_061_1", dutch_name = "behandelen deelzaak zienswijze", events = 6 },
+  { code = "10_UOV_061_0", dutch_name = "zienswijze behandelen in system", events = 2 },
+  { code = "12_AP_UOV_010", dutch_name = "aangepast plan na zienswijze", events = 51 },
+]
+
+[[concept]]
+term = "besluit"
+wabo_count = 63
+log_phrase = "besluit omgevingsvergunning"
+canonical = "01_HOOFD_490_1"
+note = "Chi cac buoc LA quyet dinh (tao / giai doan da quyet / dang ky ngay); loai cac code 'ontwerpbesluit' (quyet dinh DU THAO, khai niem khac) va cac code 'instellen besluitfase/besluitstatus' (ghi so giai doan / trang thai, khong phai hanh dong quyet). Ten '...vergunning2' cua 490_5 la loi chinh ta trong log goc, giu nguyen."
+activities = [
+  { code = "01_HOOFD_490_1", dutch_name = "aanmaken besluit omgevingsvergunning", events = 4625 },
+  { code = "01_HOOFD_495", dutch_name = "fase besluit genomen", events = 3660 },
+  { code = "01_HOOFD_490_3", dutch_name = "registreren datum besluit omgevingsvergunning", events = 1614 },
+  { code = "01_HOOFD_490_5", dutch_name = "registreren datum besluit omgevingsvergunning2", events = 2411 },
+]
+
+[[concept]]
+term = "beschikking"
+wabo_count = 107
+log_phrase = "beschikking omgevingsvergunning"
+canonical = "01_HOOFD_490_4"
+note = "Chi cac buoc ve van ban quyet dinh chinh thuc (tao / giai doan da gui / ban sao / nhap ngay gui); loai cac code publicatie (thuoc 'bekendmaking') va 'ontwerpbesluit'."
+activities = [
+  { code = "01_HOOFD_490_4", dutch_name = "genereren beschikking omgevingsvergunning", events = 2710 },
+  { code = "01_HOOFD_515", dutch_name = "fase beschikking verzonden", events = 2450 },
+  { code = "01_HOOFD_510_1", dutch_name = "afschrift beschikking omgevingsvergunning aan belanghebbenden", events = 4455 },
+  { code = "01_HOOFD_510_2", dutch_name = "invoeren verzenddatum beschikking omgevingsvergunning", events = 4492 },
+  { code = "01_HOOFD_510_3", dutch_name = "invoeren verzenddatum beschikking omgevingsvergunning", events = 2451 },
+  { code = "01_HOOFD_510_4", dutch_name = "invoeren verzenddatum beschikking", events = 2398 },
+]
+
+[[concept]]
+term = "bezwaar"
+wabo_count = 8
+canonical = "01_BB_540"
+note = "Tap day du 20 code co ten chua 'bezwaar'. Canonical la don khieu nai DA NOP (01_BB_540), khong phai code dang ky thoi han nhieu nhat (01_HOOFD_500, 2857 lan — do la buoc dang ky han, dung chung voi 'beroep')."
+activities = [
+  { code = "01_HOOFD_500", dutch_name = "registreren bezwaar beroepstermijn", events = 2857 },
+  { code = "01_BB_540", dutch_name = "bezwaar tegen beschikking ingediend", events = 2035 },
+  { code = "08_AWB45_110", dutch_name = "bezwaar op besluit buiten behandeling ontvangen", events = 152 },
+  { code = "06_VD_050", dutch_name = "registreren bezwaartermijn", events = 36 },
+  { code = "06_VD_100", dutch_name = "bezwaar op verlengen proceduretermijn ontvangen", events = 31 },
+  { code = "01_BB_545", dutch_name = "fase bezwaar ingediend", events = 23 },
+  { code = "01_BB_546", dutch_name = "bezwaar en VVZ in system", events = 22 },
+  { code = "01_BB_550", dutch_name = "behandelen bezwaardeelzaak", events = 19 },
+  { code = "01_BB_560", dutch_name = "bezwaardeelzaak afgerond", events = 17 },
+  { code = "14_VRIJ_110", dutch_name = "bezwaar tegen besluit vergunningvrij ontvangen", events = 16 },
+  { code = "01_BB_550_2", dutch_name = "bezwaardeelzaak afgerond", events = 8 },
+  { code = "01_BB_550_1", dutch_name = "behandelen bezwaardeelzaak", events = 7 },
+  { code = "08_AWB45_115", dutch_name = "fase bezwaar ingediend", events = 5 },
+  { code = "08_AWB45_140", dutch_name = "bezwaar tegen buiten behandeling gegrond", events = 5 },
+  { code = "08_AWB45_120_1", dutch_name = "behandelen bezwaardeelzaak buiten behandeling", events = 4 },
+  { code = "08_AWB45_120_2", dutch_name = "bezwaardeelzaak buiten behandeling afgerond", events = 4 },
+  { code = "08_AWB45_120_0", dutch_name = "bezwaar op besluit buiten behandeling behandelen in system", events = 3 },
+  { code = "01_BB_550_0", dutch_name = "bezwaarschrift als hoofdzaak", events = 1 },
+  { code = "01_BB_550_3", dutch_name = "bezwaarzaken relateren", events = 1 },
+  { code = "01_BB_550_3a", dutch_name = "meer bezwaarzaken", events = 1 },
+]
+
+[[concept]]
+term = "beroep"
+wabo_count = 15
+canonical = "01_BB_630"
+note = "Tap day du 13 code co ten chua 'beroep'. Canonical la don khang cao DA NOP (01_BB_630). 01_HOOFD_500 nam trong ca hai tap 'bezwaar' va 'beroep' (dang ky han chung cho ca hai)."
+activities = [
+  { code = "01_HOOFD_500", dutch_name = "registreren bezwaar beroepstermijn", events = 2857 },
+  { code = "01_BB_630", dutch_name = "beroep ingesteld", events = 358 },
+  { code = "01_BB_700", dutch_name = "hoger beroep ingesteld", events = 12 },
+  { code = "01_BB_635", dutch_name = "fase beroep aangetekend", events = 11 },
+  { code = "01_BB_636", dutch_name = "beroep en VVZ in system", events = 11 },
+  { code = "01_BB_670", dutch_name = "behandelen beroepdeelzaak", events = 9 },
+  { code = "01_BB_670_2", dutch_name = "beroepdeelzaak afgerond", events = 6 },
+  { code = "01_BB_680", dutch_name = "beroepdeelzaak afgerond", events = 6 },
+  { code = "01_BB_670_1", dutch_name = "behandelen beroepdeelzaak", events = 3 },
+  { code = "01_BB_705", dutch_name = "fase hoger beroep aangetekend", events = 2 },
+  { code = "01_BB_706", dutch_name = "hoger beroep in system", events = 2 },
+  { code = "01_BB_710_1", dutch_name = "behandelen hoger beroep deelzaak", events = 2 },
+  { code = "01_BB_710_2", dutch_name = "hoger beroep deelzaak afgerond", events = 1 },
+]
+
+[[concept]]
+term = "voorlopige voorziening"
+wabo_count = 1
+canonical = "01_BB_590"
+note = "01_BB_590 va 01_BB_640 co cung ten NL (bien the theo do thi)."
+activities = [
+  { code = "01_BB_590", dutch_name = "verzoek om voorlopige voorziening ontvangen", events = 27 },
+  { code = "01_BB_640", dutch_name = "verzoek om voorlopige voorziening ontvangen", events = 13 },
+  { code = "01_BB_600", dutch_name = "behandelen deelzaak voorlopige voorziening", events = 3 },
+  { code = "01_BB_610", dutch_name = "deelzaak voorlopige voorziening afgerond", events = 3 },
+  { code = "01_BB_650_1", dutch_name = "behandelen deelzaak voorlopige voorziening", events = 1 },
+  { code = "01_BB_650_2", dutch_name = "deelzaak voorlopige voorziening afgerond", events = 1 },
+]
+
+[[concept]]
+term = "verlengen"
+wabo_count = 2
+log_phrase = "verlengen proceduretermijn"
+canonical = "06_VD_010"
+note = "Tap day du 17 code co ten chua 'verlengen proceduretermijn'. 06_VD_100 nam trong ca hai tap 'verlengen' va 'bezwaar' (khieu nai ve viec gia han)."
+activities = [
+  { code = "06_VD_010", dutch_name = "verlengen proceduretermijn", events = 1923 },
+  { code = "06_VD_030_1", dutch_name = "aanmaken besluit verlengen proceduretermijn", events = 311 },
+  { code = "06_VD_060_2", dutch_name = "invoeren verzenddatum beschikking verlengen proceduretermijn", events = 212 },
+  { code = "06_VD_030_4", dutch_name = "genereren beschikking verlengen proceduretermijn", events = 180 },
+  { code = "06_VD_060_3", dutch_name = "verzenddatum beschikking verlengen proceduretermijn invullen", events = 173 },
+  { code = "03_VD_060_0", dutch_name = "begeleidende brief verlengen proceduretermijn aanmaken", events = 135 },
+  { code = "06_VD_060", dutch_name = "afschrift beschikking verlengen proceduretermijn aan belanghebbenden", events = 121 },
+  { code = "06_VD_070", dutch_name = "invoeren verzenddatum beschikking verlengen proceduretermijn", events = 119 },
+  { code = "06_VD_030_5", dutch_name = "registreren datum besluit verlengen proceduretermijn", events = 116 },
+  { code = "06_VD_060_1", dutch_name = "afschrift beschikking verlengen proceduretermijn aan belanghebbenden", events = 115 },
+  { code = "06_VD_060_4", dutch_name = "verzenddatum beschikking verlengen proceduretermijn invullen", events = 36 },
+  { code = "06_VD_020_1", dutch_name = "aanmaken besluit verlengen proceduretermijn", events = 34 },
+  { code = "06_VD_020_2", dutch_name = "registreren datum besluit verlengen proceduretermijn", events = 34 },
+  { code = "06_VD_040", dutch_name = "beschikking verlengen proceduretermijn", events = 34 },
+  { code = "06_VD_100", dutch_name = "bezwaar op verlengen proceduretermijn ontvangen", events = 31 },
+  { code = "06_VD_140", dutch_name = "besluit verlengen proceduretermijn onherroepelijk", events = 31 },
+  { code = "06_VD_016", dutch_name = "registreren datum verzoek verlengen proceduretermijn", events = 1 },
+]
+
+[[concept]]
+term = "buiten behandeling"
+wabo_count = 3
+canonical = "08_AWB45_060"
+note = "Tap day du 23 code co ten chua 'buiten behandeling'. Canonical la hanh dong khong thu ly (08_AWB45_060)."
+activities = [
+  { code = "08_AWB45_060", dutch_name = "buiten behandeling laten", events = 261 },
+  { code = "08_AWB45_070_1", dutch_name = "aanmaken besluit buiten behandeling", events = 235 },
+  { code = "08_AWB45_090_2", dutch_name = "invoeren verzenddatum beschikking buiten behandeling", events = 209 },
+  { code = "08_AWB45_110", dutch_name = "bezwaar op besluit buiten behandeling ontvangen", events = 152 },
+  { code = "08_AWB45_150", dutch_name = "besluit buiten behandeling onherroepelijk", events = 146 },
+  { code = "08_AWB45_070_4", dutch_name = "beschikking buiten behandeling laten", events = 121 },
+  { code = "08_AWB45_090_1", dutch_name = "afschrift beschikking buiten behandeling aan belanghebbenden", events = 119 },
+  { code = "08_AWB45_075", dutch_name = "fase buiten behandeling gelaten", events = 116 },
+  { code = "08_AWB45_090_3", dutch_name = "invoeren verzenddatum beschikking buiten behandeling", events = 110 },
+  { code = "08_AWB45_090_0", dutch_name = "begeleidende brief buiten behandeling laten aanmaken", events = 103 },
+  { code = "08_AWB45_070_5", dutch_name = "registreren datum besluit buiten behandeling", events = 99 },
+  { code = "08_AWB45_070_3", dutch_name = "registreren datum besluit buiten behandeling", events = 94 },
+  { code = "08_AWB45_070_5a", dutch_name = "instellen besluitfase:buiten behandeling laten besloten", events = 75 },
+  { code = "08_AWB45_180", dutch_name = "proces stoppen na buiten behandeling stellen", events = 55 },
+  { code = "08_AWB45_070_3a", dutch_name = "instellen besluitfase:buiten behandeling laten besloten", events = 35 },
+  { code = "08_AWB45_090_4", dutch_name = "invoeren verzenddatum beschikking buiten behandeling", events = 7 },
+  { code = "01_HOOFD_160", dutch_name = "WAW aanvraag buiten behandeling", events = 6 },
+  { code = "08_AWB45_140", dutch_name = "bezwaar tegen buiten behandeling gegrond", events = 5 },
+  { code = "08_AWB45_120_1", dutch_name = "behandelen bezwaardeelzaak buiten behandeling", events = 4 },
+  { code = "08_AWB45_120_2", dutch_name = "bezwaardeelzaak buiten behandeling afgerond", events = 4 },
+  { code = "08_AWB45_120_0", dutch_name = "bezwaar op besluit buiten behandeling behandelen in system", events = 3 },
+  { code = "08_AWB45_WAW_010", dutch_name = "WAW aanvraag buiten behandeling", events = 3 },
+  { code = "08_AWB45_141", dutch_name = "instellen besluitfase:buiten behandeling laten vervallen", events = 2 },
+]
+
+[[concept]]
+term = "intrekken"
+wabo_count = 6
+log_phrase = "beeindigen op verzoek / zaak intrekken"
+canonical = "05_EIND_010"
+note = "Wabo noi 'intrekken' (rut don); log dien dat bang 'beeindigen op verzoek' (tieu trinh 05_EIND_, thuong gap) va 'zaak intrekken' (99_NOCODE_01, hiem — 32 su kien)."
+activities = [
+  { code = "05_EIND_010", dutch_name = "beeindigen op verzoek", events = 2733 },
+  { code = "05_EIND_040", dutch_name = "beschikking beeindigen op verzoek", events = 56 },
+  { code = "99_NOCODE_01", dutch_name = "zaak intrekken", events = 32 },
+]
+
+[[concept]]
+term = "bekendmaking"
+wabo_count = 8
+log_phrase = "publicatie"
+canonical = "01_HOOFD_520"
+note = "Tu khac, buoc giong nhau: Wabo noi 'bekendmaking' (cong bo chinh thuc), log noi 'publicatie' (cong bo). Canonical la buoc tao tai lieu cong bo cua quyet dinh."
+activities = [
+  { code = "10_UOV_040", dutch_name = "publicatie document ontwerpbesluit", events = 266 },
+  { code = "01_HOOFD_520", dutch_name = "genereren publicatiedocument beschikking omgevingsvergunning", events = 1922 },
+  { code = "01_HOOFD_530", dutch_name = "registreren datum publicatie beschikking omgevingsvergunning", events = 1859 },
+  { code = "01_HOOFD_100", dutch_name = "registratie datum publicatie ingekomen aanvraag", events = 1991 },
+]
+
+[[unmapped]]
+term = "bouwen"
+wabo_count = 9
+reason = "Hoat dong cua du an xin phep (xay dung), khong phai buoc thu tuc trong log; khong co hoat dong log nao."
+
+[[unmapped]]
+term = "slopen"
+wabo_count = 11
+reason = "Hoat dong cua du an xin phep (pha do), khong phai buoc thu tuc trong log; khong co hoat dong log nao."
+
+[[unmapped]]
+term = "weigeren"
+wabo_count = 4
+reason = "Tu choi la KET QUA cua besluit, khong phai hoat dong rieng trong log."
+
+[[unmapped]]
+term = "verlenen"
+wabo_count = 13
+reason = "Cap phep la KET QUA cua besluit (log dien dat bang cac code 'vergunnen'), khong phai hoat dong rieng trong log."
+
+[[unmapped]]
+term = "vergunningvrij"
+wabo_count = 0
+reason = "Tu khong xuat hien trong van ban Wabo 2015 (Wabo dien dat bang 'geen omgevingsvergunning vereist'); log co tieu trinh 14_VRIJ_* nhung khong gan duoc vao mot thuat ngu Wabo cu the."
+
+[[unmapped]]
+term = "ontvangstbevestiging"
+wabo_count = 0
+reason = "Khong co trong van ban Wabo (thuoc Awb, khong phai Wabo); chi co phia log (7 code). Khong phai khai niem Wabo."
+
+[[unmapped]]
+term = "inspraak"
+wabo_count = 0
+reason = "Khong co trong van ban Wabo 2015."
+
+[[unmapped]]
+term = "kappen"
+wabo_count = 0
+reason = "Khong co trong van ban Wabo 2015 (hoat dong du an khac, nhu 'bouwen')."
