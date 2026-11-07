@@ -21,3 +21,7 @@ data/
 
 # Biến môi trường local (mật khẩu dev). Không bao giờ commit.
 .env
+
+# Báo cáo chạy (out/phase1-report.json của task 13.1 và artifact khác):
+# sinh bằng lệnh lúc chạy, không nằm trong kho (đề xuất 13.1 A.1).
+out/

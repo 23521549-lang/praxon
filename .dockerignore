@@ -1,0 +1,11 @@
+# Không COPY vào image `eval` (task 13.1): venv host, lịch sử git, cache,
+# mật khẩu (.env) và artifact chạy (out/) — image chỉ cần mã nguồn + cấu hình.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+out/
+.env
