@@ -6,6 +6,28 @@
 # Mật khẩu KHÔNG hard-code trong file này: đọc từ biến môi trường POSTGRES_PASSWORD
 # (file .env, xem .env.example). Cú pháp :? khiến compose báo lỗi rõ ràng thay vì
 # chạy với mật khẩu rỗng nếu quên đặt.
+#
+# Lệnh một lệnh (task 13.1) thêm ba service: `model` (server llama.cpp),
+# `llm-proxy` (chèn khóa API — xem ghi chú dưới) và `eval` (chạy
+# `python -m praxon_core.eval.run_all`). Service `db` KHÔNG đổi.
+#
+# Hai điểm lệch so với đề xuất 13.1 A.2 (đã kiểm bằng code, ghi rõ để review):
+#
+# 1. Service `llm-proxy` (thêm): backend "cpu" của core luôn gửi khóa giả cố
+#    định "local" (`LOCAL_API_KEY` trong `adapters/language_model.py`) nên
+#    gọi thẳng server có `--api-key` sẽ 401. Proxy này (cùng mẫu đã chứng
+#    minh ở đo 9.1) nhận yêu cầu từ `eval`, chèn khóa thật từ
+#    `PRAXON_LLM_API_KEY`, chuyển tiếp tới `model`. Vì vậy `eval` gọi model
+#    qua proxy (`http://llm-proxy:8081/v1`) — và bản ghi khóa thật phải đặt
+#    `cpu_model_base_url` đúng URL này (xem ghi chú ở service `eval`).
+#    Entrypoint của image `server` là chính `llama-server` (xem docs/docker.md
+#    của llama.cpp) nên `command: sh -c ...` của A.2 sẽ bị gắn sau entrypoint
+#    đó — file này đặt `entrypoint: ["sh", "-c"]` cho đúng.
+# 2. Key B2 dùng `${...:-}` (rỗng khi thiếu) thay vì `:?` của A.2: `:?` làm
+#    compose chết lúc parse, trước khi `run_all` kịp thoát 2 với thông báo
+#    rõ; và nó chặn cả lần chạy dùng `checkpoint_store="local"` (khóa tạm).
+#    Việc bắt key sống trong `run_all` (thoát 2 khi khóa bắt "s3" mà thiếu
+#    key — 13.1 A.3), không phải ở compose.
 
 name: praxon
 
@@ -26,5 +48,79 @@ services:
       timeout: 3s
       retries: 10
 
+  model:
+    # Server llama.cpp, chỉ `llama-server` (docs/docker.md của llama.cpp).
+    # Ghim bằng digest đã kiểm ở đo 9.1 (tag :server trôi theo thời gian).
+    # KHÔNG publish port ra host: chỉ `eval` (qua proxy) gọi qua mạng compose.
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:6d581c788abba2dfa23ff78dba37ea0abfc7d838c49bcc98f4be2103df9772b3
+    environment:
+      PRAXON_LLM_API_KEY: ${PRAXON_LLM_API_KEY:?key một lần do wrapper sinh, không commit}
+    volumes:
+      - praxon_models:/models
+    entrypoint: ["sh", "-c"]
+    command: |
+      set -e
+      if [ ! -f /models/Qwen3-8B-Q4_K_M.gguf ]; then
+        if command -v curl >/dev/null 2>&1; then
+          curl -L -o /models/Qwen3-8B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf
+        elif command -v wget >/dev/null 2>&1; then
+          wget -O /models/Qwen3-8B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf
+        else
+          echo 'can curl hoac wget de tai model' >&2; exit 1
+        fi
+      fi
+      echo 'd98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785  /models/Qwen3-8B-Q4_K_M.gguf' | sha256sum -c -
+      SERVER_BIN=/app/llama-server
+      if [ ! -x "$SERVER_BIN" ]; then SERVER_BIN=llama-server; fi
+      exec "$SERVER_BIN" -m /models/Qwen3-8B-Q4_K_M.gguf --ctx-size 8192 --chat-template-kwargs '{"enable_thinking": false}' --api-key "$$PRAXON_LLM_API_KEY" --port 8080 --host 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || wget -q -O /dev/null http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  llm-proxy:
+    # Proxy chèn khóa API (xem ghi chú đầu file). Cùng image `eval` (có Python),
+    # ghi đè entrypoint của Dockerfile để chạy proxy thay vì `run_all`.
+    build: .
+    entrypoint: ["python", "-m", "tools.llm_auth_proxy"]
+    command: ["--upstream", "http://model:8000", "--port", "8081"]
+    environment:
+      PRAXON_LLM_API_KEY: ${PRAXON_LLM_API_KEY:?key một lần do wrapper sinh, không commit}
+    depends_on:
+      model:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/v1/models', timeout=5)\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  eval:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      model:
+        condition: service_healthy
+      llm-proxy:
+        condition: service_healthy
+    environment:
+      # KHÔNG đặt PRAXON_CPU_MODEL_BASE_URL ở đây: nó nằm trong config_hash
+      # (13 trường) nên ghi đè qua env sẽ làm lệch khóa (`load_locked_config`
+      # tính hash từ Settings đã ghi đè env). URL model lấy từ TOML khóa —
+      # bản ghi khóa thật phải đặt cpu_model_base_url=http://llm-proxy:8081/v1
+      # (khóa tạm hiện tại ghi localhost:8080, chỉ dùng để test, không chạy đo thật).
+      PRAXON_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/praxon
+      PRAXON_S3_ENDPOINT_URL: ${PRAXON_S3_ENDPOINT_URL:-}
+      PRAXON_S3_BUCKET: ${PRAXON_S3_BUCKET:-}
+      PRAXON_S3_ACCESS_KEY_ID: ${PRAXON_S3_ACCESS_KEY_ID:-}
+      PRAXON_S3_SECRET_ACCESS_KEY: ${PRAXON_S3_SECRET_ACCESS_KEY:-}
+    volumes:
+      - praxon_cache:/root/.cache/praxon
+      - ${PRAXON_PHASE1_OUT:-./out}:/out
+
 volumes:
   pgdata:
+  praxon_models:
+  praxon_cache:
