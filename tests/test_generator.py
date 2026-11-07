@@ -6,6 +6,7 @@ import ast
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -22,8 +23,10 @@ def _row(
     occurred: str,
     tenant: str = "acme",
     attributes: dict[str, Any] | None = None,
+    episode_id: UUID | None = None,
 ) -> EpisodeRow:
     return EpisodeRow(
+        id=episode_id if episode_id is not None else uuid4(),
         tenant_id=tenant,
         case_id=case_id,
         payload={
@@ -41,9 +44,9 @@ def test_lo_rong_thi_tra_ve_rong():
 
 def test_mot_case_xep_theo_thoi_gian():
     rows = [
-        _row("c1", "B", "2026-11-01T10:02:00"),
-        _row("c1", "A", "2026-11-01T10:00:00"),
-        _row("c1", "C", "2026-11-01T10:05:00"),
+        _row("c1", "B", "2026-11-01T10:02:00", episode_id=UUID(int=2)),
+        _row("c1", "A", "2026-11-01T10:00:00", episode_id=UUID(int=1)),
+        _row("c1", "C", "2026-11-01T10:05:00", episode_id=UUID(int=3)),
     ]
     result = replay("acme", rows)
     assert result == [
@@ -52,8 +55,23 @@ def test_mot_case_xep_theo_thoi_gian():
             case_id="c1",
             activities=("A", "B", "C"),
             attributes={},
+            episode_ids=(UUID(int=1), UUID(int=2), UUID(int=3)),
         )
     ]
+
+
+def test_episode_ids_khop_thu_tu_thoi_gian_cua_activities():
+    """episode_ids theo đúng thứ tự thời gian, khớp từng vị trí của activities."""
+    rows = [
+        _row("c1", "C", "2026-11-01T10:05:00", episode_id=UUID(int=30)),
+        _row("c1", "A", "2026-11-01T10:00:00", episode_id=UUID(int=10)),
+        _row("c1", "B", "2026-11-01T10:02:00", episode_id=UUID(int=20)),
+    ]
+    result = replay("acme", rows)
+    assert len(result) == 1
+    assert result[0].activities == ("A", "B", "C")
+    assert result[0].episode_ids == (UUID(int=10), UUID(int=20), UUID(int=30))
+    assert len(result[0].episode_ids) == len(result[0].activities)
 
 
 def test_nhieu_case_xen_ke_nhom_dung_case():
@@ -89,6 +107,7 @@ def test_thuoc_tinh_case_lay_tu_hang_som_nhat():
 
 def test_vang_case_attributes_thi_mac_dinh_rong():
     row = EpisodeRow(
+        id=UUID(int=1),
         tenant_id="acme",
         case_id="c1",
         payload={"activity": "A"},
@@ -109,6 +128,7 @@ def test_hang_khac_tenant_thi_tu_choi():
 
 def test_payload_thieu_activity_thi_tu_choi():
     row = EpisodeRow(
+        id=UUID(int=1),
         tenant_id="acme",
         case_id="c1",
         payload={},
@@ -121,6 +141,7 @@ def test_payload_thieu_activity_thi_tu_choi():
 
 def test_payload_activity_khong_phai_chuoi_thi_tu_choi():
     row = EpisodeRow(
+        id=UUID(int=1),
         tenant_id="acme",
         case_id="c1",
         payload={"activity": 42},
@@ -133,6 +154,7 @@ def test_payload_activity_khong_phai_chuoi_thi_tu_choi():
 
 def test_payload_case_attributes_khong_phai_dict_thi_tu_choi():
     row = EpisodeRow(
+        id=UUID(int=1),
         tenant_id="acme",
         case_id="c1",
         payload={"activity": "A", "case_attributes": "xay-dung"},

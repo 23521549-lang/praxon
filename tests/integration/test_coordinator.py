@@ -172,6 +172,7 @@ def test_vong_hoc_ghi_run_event_fact_thong(pg: None) -> None:
             tenant_id="acme",
             episode_rows=(
                 EpisodeRow(
+                    id=uuid.UUID(EPISODE_ID),
                     tenant_id="acme",
                     case_id="c1",
                     payload={"activity": f"A-{suffix}", "case_attributes": {}},
@@ -179,6 +180,7 @@ def test_vong_hoc_ghi_run_event_fact_thong(pg: None) -> None:
                     ingested_at=datetime(2026, 11, 6, tzinfo=UTC),
                 ),
                 EpisodeRow(
+                    id=uuid.UUID(EPISODE_ID),
                     tenant_id="acme",
                     case_id="c1",
                     payload={"activity": f"B-{suffix}", "case_attributes": {}},

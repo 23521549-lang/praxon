@@ -23,15 +23,23 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
 
 class EpisodeRow(BaseModel):
-    """Một hàng `episode`, đúng các cột trong spec (dòng 47) và V1."""
+    """Một hàng `episode`, đúng các cột trong spec (dòng 47) và V1.
+
+    `id` là khóa chính của hàng trong DB (V1: `episode.id uuid PRIMARY
+    KEY`) — bên gọi cấp từ cột `episode.id` khi đọc DB (hoặc UUID tạo ra
+    khi tổng hợp); `replay` dùng nó để gắn bằng chứng episode vào
+    `Trajectory` (không có `id` thì Insight không mang được bằng chứng).
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    id: UUID
     tenant_id: str
     case_id: str
     payload: dict[str, Any]
@@ -44,6 +52,10 @@ class Trajectory(BaseModel):
 
     Spec (dòng 75): đầu ra của Generator. `activities` giữ đúng thứ tự xảy
     ra (theo `occurred_at`); `attributes` là thuộc tính cấp case.
+    `episode_ids` là id episode của các hàng tạo nên trajectory, cùng thứ
+    tự với `activities` (phần tử thứ i của `episode_ids` là hàng sinh ra
+    hoạt động thứ i) — Reflector dùng cặp này để gắn bằng chứng episode
+    vào Insight (chỉ episode nào thực sự thể hiện luật).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -52,6 +64,7 @@ class Trajectory(BaseModel):
     case_id: str
     activities: tuple[str, ...]
     attributes: dict[str, Any]
+    episode_ids: tuple[UUID, ...]
 
 
 def _activity_from_payload(payload: dict[str, Any]) -> str:
@@ -87,7 +100,9 @@ def replay(tenant_id: str, rows: list[EpisodeRow]) -> list[Trajectory]:
       xuất hiện lần đầu trong đầu vào.
     - Trong mỗi case, xếp hàng theo `occurred_at` (sắp xếp ổn định:
       `occurred_at` bằng nhau giữ nguyên thứ tự đầu vào); hoạt động của
-      case là dãy hoạt động của các hàng theo thứ tự đó.
+      case là dãy hoạt động của các hàng theo thứ tự đó. `episode_ids`
+      lấy từ các hàng theo cùng thứ tự đó nên phần tử thứ i của
+      `episode_ids` là hàng sinh ra hoạt động thứ i của `activities`.
     - Thuộc tính case lấy từ hàng sớm nhất của case (sau khi xếp theo thời
       gian); các hàng trong một case mang cùng thuộc tính (phi chuẩn hóa),
       nên hàng nào cũng cho cùng kết quả khi dữ liệu nhất quán.
@@ -115,6 +130,7 @@ def replay(tenant_id: str, rows: list[EpisodeRow]) -> list[Trajectory]:
                 case_id=case_id,
                 activities=tuple(activities),
                 attributes=attributes,
+                episode_ids=tuple(row.id for row in case_rows),
             )
         )
     return trajectories
