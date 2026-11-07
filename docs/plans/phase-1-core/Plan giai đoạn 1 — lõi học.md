@@ -252,7 +252,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | 10.1 | Bộ điều phối mỏng nối sáu vai; ghi `run` với seed, `model_id`, `model_revision`, `code_commit`, `config_hash`, `data_hash`, token vào ra | Test: mỗi vai vẫn là hàm thuần; `run` có đủ sáu trường điều kiện tái lập | xong | chưa review |
 | 10.2 | Bảy điều kiện thí nghiệm chạy bằng một lệnh trên bộ chuẩn bán tổng hợp | Lệnh in bốn chỉ số theo tenant cho cả bảy điều kiện | xong | chưa review |
 | 10.3 | Checkpoint mỗi N case gồm fact, candidate chờ, con trỏ case, bộ nhớ đệm; đẩy sang R2 | Test: cắt giữa lần chạy rồi khởi động lại, chạy tiếp từ con trỏ, kết quả không đổi | xong | chưa review |
-| 10.4 | Trần token kiểm trước khi gọi; chạm trần thì ghi checkpoint, đóng `run` trạng thái `budget_exceeded`, thoát mã lỗi rõ | Test: không lệnh gọi nào vượt trần được phát ra | chưa làm | chưa review |
+| 10.4 | Trần token kiểm trước khi gọi; chạm trần thì ghi checkpoint, đóng `run` trạng thái `budget_exceeded`, thoát mã lỗi rõ | Test: không lệnh gọi nào vượt trần được phát ra | xong | chưa review |
 | 10.5 | Khai báo giao diện `ToolGateway` bốn quyết định: cho, chặn, hỏi người, để luật quyết | Test hợp đồng với cổng giả xanh; `lint-imports` xác nhận client tool chỉ trong `gateway` và `adapters` | xong | chưa review |
 
 **Review plan con 10** — ngày: · người review: · kết luận:
