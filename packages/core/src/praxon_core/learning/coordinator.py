@@ -319,6 +319,15 @@ class LearningRound:
     ghi vào checkpoint cho cổng resume, xem Phụ lục A.3). Trần > 0 mà
     không ghi checkpoint thì vòng bị từ chối từ đầu (chạm trần thì phải
     có checkpoint để chạy tiếp).
+
+    Chạy lại (task 12.3, spec dòng 191): `is_rerun` là True khi vòng này
+    là lần chạy lại để kiểm tái lập (phải ở trên phần đo —
+    `on_test_split=True`, không thì bị từ chối từ đầu); `repro_gaps` là
+    tên các điều kiện tái lập còn thiếu, tính trước bằng
+    `reproducibility_gaps` (rỗng = đủ sáu điều kiện). `build_run_row`
+    chép verdict vào hàng `run`: chạy lại + gap rỗng → `reproducible`,
+    chạy lại + có gap → `not_reproducible` + tên gap; không phải chạy
+    lại → verdict NULL.
     """
 
     tenant_id: str
@@ -344,6 +353,8 @@ class LearningRound:
     token_budget_reserve_per_call: int = 2048
     reflector_batch_size: int = 10
     config_hash_no_budget: str = ""
+    is_rerun: bool = False
+    repro_gaps: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -702,11 +713,19 @@ def run_learning_round(
     `status="budget_exceeded"` rồi raise `BudgetExceededError` mang
     partial outcome để bên gọi ghi `run` và thoát mã 3. Trần > 0 mà
     không ghi checkpoint thì vòng bị từ chối từ đầu (validation).
+
+    Chạy lại (task 12.3, spec dòng 191): khi `is_rerun=True` thì hàng
+    `run` mang verdict tái lập (xem `build_run_row`); vòng chạy lại mà
+    không ở trên phần đo (`on_test_split=False`) thì bị từ chối từ đầu.
     """
     if round.on_test_split:
         check_test_split_lock(
             config_hash=round.config_hash,
             locked_config_hash=round.locked_config_hash,
+        )
+    if round.is_rerun and not round.on_test_split:
+        raise ValueError(
+            "is_rerun=True mà on_test_split=False: chạy lại đo thì phải ở trên phần đo"
         )
     if round.checkpoint_every_n_cases < 0:
         raise ValueError("checkpoint_every_n_cases không được âm")
@@ -781,7 +800,20 @@ def run_learning_round(
         )
 
     def build_run_row(status: str) -> RunRow:
-        """Hàng `run` với trạng thái tích lũy hiện tại (`succeeded`/`budget_exceeded`)."""
+        """Hàng `run` với trạng thái tích lũy hiện tại (`succeeded`/`budget_exceeded`).
+
+        Lần chạy lại (task 12.3) mang thêm verdict tái lập: gap rỗng thì
+        `reproducible`, có gap thì `not_reproducible` + tên gap nối phẩy.
+        Lần chạy thường thì verdict NULL (không phải lần chạy lại).
+        """
+        if round.is_rerun:
+            reproducibility: str | None = (
+                "reproducible" if not round.repro_gaps else "not_reproducible"
+            )
+            repro_gaps = ",".join(round.repro_gaps)
+        else:
+            reproducibility = None
+            repro_gaps = ""
         return RunRow(
             tenant_id=round.tenant_id,
             seed=round.seed,
@@ -794,6 +826,8 @@ def run_learning_round(
             tokens_out=tokens_out,
             wall_time=round.wall_time,
             status=status,
+            reproducibility=reproducibility,
+            repro_gaps=repro_gaps,
         )
 
     def build_outcome(run_row: RunRow) -> RoundOutcome:
