@@ -22,7 +22,8 @@
 #    `cpu_model_base_url` đúng URL này (xem ghi chú ở service `eval`).
 #    Entrypoint của image `server` là chính `llama-server` (xem docs/docker.md
 #    của llama.cpp) nên `command: sh -c ...` của A.2 sẽ bị gắn sau entrypoint
-#    đó — file này đặt `entrypoint: ["sh", "-c"]` cho đúng.
+#    đó — file này ghi đè bằng `entrypoint: ["sh", "/entrypoint.sh"]`, script
+#    nằm ở tools/model-entrypoint.sh (xem ghi chú ở service `model`).
 # 2. Key B2 dùng `${...:-}` (rỗng khi thiếu) thay vì `:?` của A.2: `:?` làm
 #    compose chết lúc parse, trước khi `run_all` kịp thoát 2 với thông báo
 #    rõ; và nó chặn cả lần chạy dùng `checkpoint_store="local"` (khóa tạm).
@@ -57,22 +58,11 @@ services:
       PRAXON_LLM_API_KEY: ${PRAXON_LLM_API_KEY:?key một lần do wrapper sinh, không commit}
     volumes:
       - praxon_models:/models
-    entrypoint: ["sh", "-c"]
-    command: |
-      set -e
-      if [ ! -f /models/Qwen3-8B-Q4_K_M.gguf ]; then
-        if command -v curl >/dev/null 2>&1; then
-          curl -L -o /models/Qwen3-8B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf
-        elif command -v wget >/dev/null 2>&1; then
-          wget -O /models/Qwen3-8B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf
-        else
-          echo 'can curl hoac wget de tai model' >&2; exit 1
-        fi
-      fi
-      echo 'd98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785  /models/Qwen3-8B-Q4_K_M.gguf' | sha256sum -c -
-      SERVER_BIN=/app/llama-server
-      if [ ! -x "$SERVER_BIN" ]; then SERVER_BIN=llama-server; fi
-      exec "$SERVER_BIN" -m /models/Qwen3-8B-Q4_K_M.gguf --ctx-size 8192 --chat-template-kwargs '{"enable_thinking": false}' --api-key "$$PRAXON_LLM_API_KEY" --port 8080 --host 0.0.0.0
+      - ./tools/model-entrypoint.sh:/entrypoint.sh:ro
+    # Script tải GGUF + chạy llama-server nằm ở tools/model-entrypoint.sh.
+    # KHÔNG viết lại thành `command:` dạng chuỗi — Compose tách chuỗi thành
+    # từng từ nên container chỉ chạy `set` rồi thoát 0.
+    entrypoint: ["sh", "/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || wget -q -O /dev/null http://localhost:8080/health || exit 1"]
       interval: 10s
@@ -84,7 +74,7 @@ services:
     # ghi đè entrypoint của Dockerfile để chạy proxy thay vì `run_all`.
     build: .
     entrypoint: ["python", "-m", "tools.llm_auth_proxy"]
-    command: ["--upstream", "http://model:8000", "--port", "8081"]
+    command: ["--upstream", "http://model:8080", "--port", "8081"]
     environment:
       PRAXON_LLM_API_KEY: ${PRAXON_LLM_API_KEY:?key một lần do wrapper sinh, không commit}
     depends_on:

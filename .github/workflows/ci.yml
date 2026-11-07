@@ -141,8 +141,16 @@ jobs:
       - name: Máy trống (smoke) — lần chạy 1
         run: python -m tools.run_phase1 --smoke --out out1
 
+      - name: Máy trống (smoke) — log khi lần chạy 1 lỗi
+        if: failure()
+        run: docker compose logs model llm-proxy db
+
       - name: Máy trống (smoke) — lần chạy 2
         run: python -m tools.run_phase1 --smoke --out out2
+
+      - name: Máy trống (smoke) — log khi lần chạy 2 lỗi
+        if: failure()
+        run: docker compose logs model llm-proxy db
 
       - name: Máy trống (smoke) — so hai lần chạy
         run: python -m praxon_core.eval.run_all --compare out1/phase1-report.json out2/phase1-report.json
