@@ -5,8 +5,8 @@
 # locked_config_hash dưới đây là hash thật tính từ configs/phan-do.toml
 # đã khóa; lock_commit và code_commit là mã commit khóa L1 (ghi ở commit L2).
 locked_config_hash = "13e98fec4a6088cf30b63c1efea594460193be605efaf957eb5d548d4a225f20"
-lock_commit = "0000000000000000000000000000000000000000"
-code_commit = "0000000000000000000000000000000000000000"
+lock_commit = "8a34d67e121c2b8005fc680c8fb1f996c31bdda0"
+code_commit = "8a34d67e121c2b8005fc680c8fb1f996c31bdda0"
 seed = 0
 model_id = "Qwen/Qwen3-8B-GGUF"
 model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
