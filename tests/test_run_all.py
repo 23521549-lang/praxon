@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar, Literal, cast
 
 import pytest
 from tools.llm_auth_proxy import make_handler
@@ -32,10 +32,12 @@ from praxon_core.eval.run_all import (
     _mock_bpic_driver,
     _mock_bpic_rows,
     _read_lock_seed,
+    _s3_keys_missing,
     compare_reports,
     compare_runs,
     normalize_row,
 )
+from praxon_core.settings import Settings
 
 #: Nửa BPIC của data_hash (12.2 A.1, đo bằng lệnh chia — phải khớp đúng).
 BPIC_HALF = "0edb706dcf2afb637a0c7b57ee9d284fc8958ee50b9594a05e3365ec5a805b92"
@@ -488,6 +490,48 @@ def test_read_lock_seed_seed_khong_phai_so_thi_value_error(tmp_path):
     lock.write_text('seed = "42"\n', encoding="utf-8")
     with pytest.raises(ValueError):
         _read_lock_seed(lock)
+
+
+# ---------------------------------------------------------------- kiểm key B2
+
+
+def _settings_s3(
+    checkpoint_store: Literal["local", "s3"] = "s3",
+    s3_access_key_id: str | None = None,
+    s3_secret_access_key: str | None = None,
+) -> Settings:
+    """Dựng Settings bắt checkpoint_store="s3", hai key B2 mặc định None."""
+    return Settings(
+        database_url="postgresql://postgres@localhost:5432/praxon",
+        checkpoint_store=checkpoint_store,
+        s3_access_key_id=s3_access_key_id,
+        s3_secret_access_key=s3_secret_access_key,
+    )
+
+
+def test_smoke_mien_kiem_key_b2_khi_khoa_bat_s3():
+    # Khóa bắt "s3" nhưng chế độ smoke không chạm S3: bước kiểm phải cho qua.
+    assert _s3_keys_missing(_settings_s3(), smoke=True) is False
+    assert (
+        _s3_keys_missing(
+            _settings_s3(s3_access_key_id="khoa-gia", s3_secret_access_key="bi-mat-gia"),
+            smoke=True,
+        )
+        is False
+    )
+
+
+def test_khong_smoke_thieu_key_b2_khi_khoa_bat_s3_thi_chan():
+    # Lần chạy thật thiếu key vẫn fail-closed; đủ key hoặc store local thì qua.
+    assert _s3_keys_missing(_settings_s3(), smoke=False) is True
+    assert (
+        _s3_keys_missing(
+            _settings_s3(s3_access_key_id="khoa-gia", s3_secret_access_key="bi-mat-gia"),
+            smoke=False,
+        )
+        is False
+    )
+    assert _s3_keys_missing(_settings_s3(checkpoint_store="local"), smoke=False) is False
 
 
 # ---------------------------------------------------------------- proxy chèn khóa

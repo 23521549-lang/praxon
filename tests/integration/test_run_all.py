@@ -212,10 +212,11 @@ def test_khoa_lech_thi_exit_2(pg, tmp_path, monkeypatch):
     assert code == 2
 
 
-def test_khoa_bat_s3_ma_thieu_key_thi_exit_2(pg, tmp_path, monkeypatch):
+def test_smoke_mien_kiem_key_b2_khi_khoa_bat_s3(pg, tmp_path, monkeypatch):
+    # Khóa bắt "s3" nhưng smoke không chạm S3: miễn bước kiểm, chạy hết.
     code, report, _out, _bpic = _run_smoke(tmp_path, monkeypatch, checkpoint_store="s3")
-    assert code == 2
-    assert report is None
+    assert code == 0
+    assert report is not None
 
 
 def test_driver_tra_2_thi_exit_2(pg, tmp_path, monkeypatch):

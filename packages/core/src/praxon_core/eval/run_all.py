@@ -703,6 +703,24 @@ def _sorted_rows(rows: Sequence[dict[str, object]]) -> list[dict[str, object]]:
     return sorted(rows, key=_row_key)
 
 
+def _s3_keys_missing(settings: Settings, smoke: bool) -> bool:
+    """Trả True khi bước kiểm key B2 phải chặn.
+
+    Khóa bắt `checkpoint_store="s3"`, không phải chế độ smoke, mà thiếu một
+    trong hai key B2.
+
+    Chế độ smoke được miễn vì nó không bao giờ chạm S3: driver BPIC giả chỉ
+    ghi JSON cục bộ, trích Wabo bị bỏ qua, không khởi tạo checkpoint store.
+    13.1 A.3 viết cho lần chạy đo thật nên lần chạy không-smoke thiếu key
+    vẫn chặn fail-closed, không tự đổi sang "local".
+    """
+    return (
+        settings.checkpoint_store == "s3"
+        and not smoke
+        and (not settings.s3_access_key_id or not settings.s3_secret_access_key)
+    )
+
+
 def run_phase1(
     *,
     config_path: Path,
@@ -730,10 +748,9 @@ def run_phase1(
         print(f"lỗi khóa: {exc}", file=sys.stderr)
         return 2
     # Cấu hình khóa bắt checkpoint_store="s3" thì key B2 phải có; thiếu thì
-    # thoát 2 fail-closed, không tự đổi sang "local" (13.1 A.3).
-    if settings.checkpoint_store == "s3" and (
-        not settings.s3_access_key_id or not settings.s3_secret_access_key
-    ):
+    # thoát 2 fail-closed, không tự đổi sang "local" (13.1 A.3). Chế độ
+    # smoke được miễn (xem `_s3_keys_missing`): smoke không chạm S3.
+    if _s3_keys_missing(settings, smoke):
         print(
             'lỗi cấu hình: cấu hình khóa bắt checkpoint_store="s3" nhưng '
             "thiếu key B2 (PRAXON_S3_ACCESS_KEY_ID / PRAXON_S3_SECRET_ACCESS_KEY)",
