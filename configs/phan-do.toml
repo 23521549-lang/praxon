@@ -1,7 +1,7 @@
 # Cấu hình chạy phần đo (task 12.1, spec dòng 152).
-# CHƯA KHÓA - giá trị tạm để test chạy được; KHÔNG dùng để chạy đo thật.
-# Khóa thật chỉ làm ở bước riêng sau khi checklist tiền khóa (đề xuất 12.1,
-# Phụ lục A.3) đủ: 11.1 chốt engine/model + trần token + nơi lưu checkpoint.
+# ĐÃ KHÓA - bản ghi khóa thật, commit khóa L1 8a34d67e121c2b8005fc680c8fb1f996c31bdda0
+# (xem configs/phan-do.lock.toml). Không sửa file này tại chỗ - khóa lại
+# bằng commit khóa mới nếu cần đổi (đề xuất 12.1, mục 5, R5).
 # Sáu trường nhạy cảm KHÔNG có trong file này (database_url, openai_api_key
 # và bốn trường S3): driver lấy chúng từ biến môi trường lúc chạy; chúng
 # đã loại khỏi config_hash nên xoay khóa hay đổi DB không đổi hash.
