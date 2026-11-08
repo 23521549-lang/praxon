@@ -33,6 +33,7 @@ from praxon_core.learning.wabo_rules import (
     split_chunk_at_article,
     split_wabo_text,
 )
+from praxon_core.settings import Settings
 
 AANVRAAG = "01_HOOFD_015"
 ONTWERP = "01_HOOFD_440_1"
@@ -532,7 +533,7 @@ def test_main_chay_duoc_voi_mo_hinh_gia(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "praxon_core.learning.wabo_rules.build_reflector",
-        lambda settings, seed: FakeReflector(),
+        lambda settings, seed, max_tokens=None: FakeReflector(),
     )
     code = main(["--html", str(html_path), "--cache-dir", str(tmp_path)])
     assert code == 0
@@ -567,7 +568,7 @@ def test_main_tach_doan_voi_co_split_chunk(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "praxon_core.learning.wabo_rules.build_reflector",
-        lambda settings, seed: FakeReflector(),
+        lambda settings, seed, max_tokens=None: FakeReflector(),
     )
     code = main(
         [
@@ -585,6 +586,45 @@ def test_main_tach_doan_voi_co_split_chunk(monkeypatch, tmp_path):
     assert len(calls) == 2
     assert calls[0].startswith("Wet algemene bepalingen")
     assert calls[1].startswith("Artikel 3.1")
+
+
+def test_main_co_max_tokens_toi_duoc_build_reflector(monkeypatch, tmp_path):
+    """Cờ --max-tokens tới được build_reflector; mặc định là None."""
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    document = WaboDocument(
+        source_url="https://example.invalid/wabo",
+        version="2015-01-01",
+        valid_start=datetime(2015, 1, 1, tzinfo=UTC),
+        valid_end=datetime(2015, 4, 1, tzinfo=UTC),
+        text=FAKE_TEXT,
+        sha256="giả",
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: document,
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+    seen: list[int | None] = []
+
+    class FakeReflector:
+        def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+            return ReflectorResult(insights=(), tokens_in=1, tokens_out=2)
+
+    def fake_build(
+        settings: Settings, seed: int, max_tokens: int | None = None
+    ) -> FakeReflector:
+        seen.append(max_tokens)
+        return FakeReflector()
+
+    monkeypatch.setattr("praxon_core.learning.wabo_rules.build_reflector", fake_build)
+    base = ["--html", str(html_path), "--cache-dir", str(tmp_path)]
+    assert main(base) == 0
+    assert main([*base, "--max-tokens", "2000"]) == 0
+    assert seen == [None, 2000]
 
 
 def test_jsonl_ghi_dong_hop_le_va_nap_lai_duoc(monkeypatch, tmp_path):
@@ -615,7 +655,7 @@ def test_jsonl_ghi_dong_hop_le_va_nap_lai_duoc(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "praxon_core.learning.wabo_rules.build_reflector",
-        lambda settings, seed: FakeReflector(),
+        lambda settings, seed, max_tokens=None: FakeReflector(),
     )
     chunks_path = tmp_path / "chunks.jsonl"
     code = main(

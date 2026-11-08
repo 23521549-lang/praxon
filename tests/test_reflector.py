@@ -291,6 +291,27 @@ def test_reflect_document_khong_truyen_max_tokens():
     assert "max_tokens" not in body
 
 
+def test_reflect_document_truyen_max_tokens_khi_dat():
+    # Lưới an toàn 9.1: Reflector(max_tokens=2000) đưa đúng khóa `max_tokens`
+    # vào thân yêu cầu thật gửi tới server giả; adapter chỉ đưa khóa này
+    # khi khác None (đường mặc định đã có test hồi quy riêng ở trên).
+    canned = _rules_text(_rule())
+    model, server = _model([canned])
+    reflector = Reflector(model, max_tokens=2000)
+    result = reflector.reflect_document("Artikel 1. De aanvrager dient een aanvraag in.", [])
+    assert len(result.insights) == 1
+    body = json.loads(server.calls[0].content.decode("utf-8"))
+    assert body["max_tokens"] == 2000
+
+
+def test_reflector_max_tokens_khong_hop_le_thi_loi():
+    # Lưới an toàn phải >= 1 khi được đặt; 0 hay âm là lỗi lập trình, lộ ngay
+    # lúc dựng thay vì lặng lẽ gửi giá trị vô nghĩa cho server.
+    model, _server = _model([_rules_text(_rule())])
+    with pytest.raises(ValueError, match="max_tokens phải >= 1"):
+        Reflector(model, max_tokens=0)
+
+
 def _reflect_evidence(
     rules: Sequence[dict[str, Any]],
     trajectories: Sequence[Trajectory],
@@ -687,11 +708,11 @@ def test_loi_vinh_vien_khong_thu_lai():
     assert isinstance(excinfo.value.__cause__, ModelCallError)
 
 
-# --- Prompt tài liệu v2 (đề xuất trích lại 9.1, phương án D) ---
+# --- Prompt tài liệu v3 (đề xuất triển khai cap 9.1, phương án D-tiếp) ---
 
-#: Khối từ vựng v2 nguyên văn (Phụ lục A của đề xuất trích lại): chỉ 13
-#: khái niệm Hà Lan đã gắn, KHÔNG kèm mã log trong ngoặc.
-VOCAB_BLOCK_V2 = (
+#: Khối từ vựng v3 nguyên văn (Phụ lục A của đề xuất triển khai cap): khối
+#: v2 + câu giới hạn "Tối đa 15 luật." ở cuối.
+VOCAB_BLOCK_V3 = (
     "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
     "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
     "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
@@ -699,27 +720,27 @@ VOCAB_BLOCK_V2 = (
     "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
     "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
     "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng."
+    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật."
 )
 
-#: SHA-256 của prompt thí nghiệm bước 0 (đoạn 0 thật, khối v2): ghi trong
-#: `~/workspace/praxon-9.1-prompt-test/vocab-chunks-v2.jsonl`, đã kiểm độc
-#: lập từ JSONL. Prompt repo sau khi sửa phải khớp đúng SHA này.
-PROMPT_SHA_DOAN_0_V2 = "0fd345801a2e0a5a29cffe1a7683bf1b976f7a1b685d8c1d205349308eb936dd"
+#: SHA-256 của prompt thí nghiệm cổng kiểm đoạn 7, biến thể 1 (prompt-cap):
+#: ghi trong `~/workspace/praxon-9.1-prompt-test/vocab-chunks-v2-chunk7.jsonl`,
+#: đã kiểm độc lập từ JSONL. Prompt repo sau khi sửa phải khớp đúng SHA này.
+PROMPT_SHA_DOAN_7_V3 = "0b57a70c49fe3772c93351a6ef861fff04801741c39290a650e397cee0e4fa25"
 
 
-def test_document_prompt_chua_khoi_tu_vung_v2_nguyen_van():
-    """Prompt tài liệu chứa đúng khối v2 nguyên văn, đúng một lần, đúng vị trí."""
-    assert DOCUMENT_PROMPT_VERSION == "v2"
-    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V2
+def test_document_prompt_chua_khoi_tu_vung_v3_nguyen_van():
+    """Prompt tài liệu chứa đúng khối v3 nguyên văn, đúng một lần, đúng vị trí."""
+    assert DOCUMENT_PROMPT_VERSION == "v3"
+    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V3
     prompt = _document_prompt("Văn bản mẫu.", ())
-    assert prompt.count(VOCAB_BLOCK_V2) == 1
+    assert prompt.count(VOCAB_BLOCK_V3) == 1
     lines = prompt.split("\n")
     assert lines[0] == ("Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.")
     assert lines[1] == (
         "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ."
     )
-    assert lines[2] == VOCAB_BLOCK_V2
+    assert lines[2] == VOCAB_BLOCK_V3
     assert lines[3] == ""
     assert lines[4] == "Tài liệu:"
     assert lines[5] == "Văn bản mẫu."
@@ -727,8 +748,8 @@ def test_document_prompt_chua_khoi_tu_vung_v2_nguyen_van():
     assert "10_UOV" not in prompt
 
 
-def test_document_prompt_doan_0_khop_sha_thi_nghiem_buoc_0():
-    """Prompt đoạn 0 thật khớp SHA với prompt thí nghiệm bước 0 (khối v2)."""
+def test_document_prompt_doan_7_khop_sha_thi_nghiem_cap():
+    """Prompt đoạn 7 thật khớp SHA với prompt thí nghiệm biến thể 1 (khối v3)."""
     from praxon_core.learning.wabo_rules import (
         extract_wabo_text,
         split_wabo_text,
@@ -738,8 +759,8 @@ def test_document_prompt_doan_0_khop_sha_thi_nghiem_buoc_0():
     if not cache.is_file():
         pytest.skip("chưa tải văn bản Wabo về cache")
     chunks = split_wabo_text(extract_wabo_text(cache.read_text(encoding="utf-8")))
-    prompt = _document_prompt(chunks[0], ())
-    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_0_V2
+    prompt = _document_prompt(chunks[7], ())
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V3
 
 
 def test_trace_batch_prompt_khong_doi_khi_sua_prompt_tai_lieu():

@@ -91,17 +91,21 @@ class Reflector:
         max_insights_per_batch: int = 20,
         seed: int | None = None,
         temperature: float = 0.0,
+        max_tokens: int | None = None,
     ) -> None:
         """Giữ model và tham số lô; không gọi mạng lúc dựng."""
         if batch_size < 1:
             raise ValueError(f"batch_size phải >= 1, nhận {batch_size}")
         if max_insights_per_batch < 1:
             raise ValueError(f"max_insights_per_batch phải >= 1, nhận {max_insights_per_batch}")
+        if max_tokens is not None and max_tokens < 1:
+            raise ValueError(f"max_tokens phải >= 1 khi được đặt, nhận {max_tokens}")
         self._model = model
         self._batch_size = batch_size
         self._max_insights_per_batch = max_insights_per_batch
         self._seed = seed
         self._temperature = temperature
+        self._max_tokens = max_tokens
 
     def reflect(
         self, trajectories: Sequence[Trajectory], facts: Sequence[FactRead]
@@ -180,6 +184,7 @@ class Reflector:
                 json_schema=DECLARE_OUTPUT_SCHEMA,
                 temperature=self._temperature,
                 seed=self._seed,
+                max_tokens=self._max_tokens,
             )
         except ModelCallError as exc:
             raise ReflectorBatchError(
@@ -246,14 +251,14 @@ def _trace_batch_prompt(batch: Sequence[Trajectory], facts: Sequence[FactRead]) 
     return "\n".join(lines)
 
 
-#: Phiên bản prompt tài liệu (khối từ vựng v2, xem `DOCUMENT_VOCAB_BLOCK`).
-DOCUMENT_PROMPT_VERSION = "v2"
+#: Phiên bản prompt tài liệu (khối từ vựng v3, xem `DOCUMENT_VOCAB_BLOCK`).
+DOCUMENT_PROMPT_VERSION = "v3"
 
-#: Khối từ vựng v2 cho prompt tài liệu (đề xuất trích lại 9.1, Phụ lục A):
-#: chỉ 13 khái niệm Hà Lan đã gắn, KHÔNG kèm mã log trong ngoặc. Mã trong
-#: ngoặc khiến model chép y nguyên "khái niệm (mã)" vào activation/target
-#: nên khớp chính xác trượt hết (thí nghiệm khối v1: đoạn 0 đạt 0/12);
-#: cổng kiểm bước 0 với khối này đạt 12/12 tuân thủ trên đoạn 0.
+#: Khối từ vựng v3 cho prompt tài liệu (đề xuất triển khai cap 9.1, Phụ lục A):
+#: khối v2 + câu giới hạn "Tối đa 15 luật." — thí nghiệm cổng kiểm đoạn 7
+#: chứng minh câu này chặn được sinh vô hạn (đối chứng v2 chạy vô hạn tới
+#: n_gen 2.626, biến thể cap trả đúng 15 luật và dừng gọn). Số 15 lấy theo
+#: mức cao nhất từng thấy 13 luật/đoạn + headroom 2.
 DOCUMENT_VOCAB_BLOCK = (
     "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
     "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
@@ -262,7 +267,7 @@ DOCUMENT_VOCAB_BLOCK = (
     "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
     "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
     "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng."
+    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật."
 )
 
 

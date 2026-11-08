@@ -619,7 +619,9 @@ def format_wabo_report(extraction: WaboExtraction) -> str:
     return "\n".join(lines)
 
 
-def build_reflector(settings: Settings, *, seed: int) -> Reflector:
+def build_reflector(
+    settings: Settings, *, seed: int, max_tokens: int | None = None
+) -> Reflector:
     """Dựng Reflector thật từ Settings (backend CPU, llama-server)."""
     model = model_from_settings(settings, backend="cpu")
     return Reflector(
@@ -627,6 +629,7 @@ def build_reflector(settings: Settings, *, seed: int) -> Reflector:
         batch_size=settings.reflector_batch_size,
         max_insights_per_batch=settings.reflector_max_insights_per_batch,
         seed=seed,
+        max_tokens=max_tokens,
     )
 
 
@@ -682,6 +685,15 @@ def main(argv: list[str] | None = None) -> int:
         help='đầu điều bắt đầu đoạn sau, vd "Artikel 8.3" (cùng --split-chunk)',
     )
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help=(
+            "lưới an toàn: cắt sinh ở N token, mặc định không giới hạn; "
+            "giá trị 2000 lấy theo mức cao nhất đã thấy 748 token x ~2,7"
+        ),
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -705,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     policy = default_rule_table().policy
     try:
-        reflector = build_reflector(settings, seed=args.seed)
+        reflector = build_reflector(settings, seed=args.seed, max_tokens=args.max_tokens)
         extraction = extract_wabo_rules(
             reflect_document=reflector.reflect_document,
             document=document,
