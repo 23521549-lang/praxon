@@ -38,6 +38,11 @@ Quyết định thiết kế (ghi rõ để review):
   ctx 2048 token mà phép đo 6.5 dùng (`--ctx-size 2048`): một đoạn
   ~1000 token, cộng prompt + JSON đầu ra vẫn vừa cửa sổ. Server chạy
   ctx lớn hơn thì tăng hằng này.
+- Tách một đoạn tại ranh giới Artikel (`--split-chunk N --split-at
+  "Artikel X"`): đoạn N thành hai đoạn con, các đoạn khác không đổi
+  từng byte nên file JSONL cũ vẫn nối lại được. Dùng cho đoạn 50
+  của Wabo (tách tại Artikel 8.3, lần đo 9.1 lần 4): model sinh
+  không dừng trên đoạn nguyên vì schema `rules` không có `maxItems`.
 - Luật trùng (cùng luật từ nhiều đoạn) chỉ đếm một lần; `extracted`
   đếm insight DUY NHẤT, nên `extracted == chấp nhận + không gắn được
   + có điều kiện + cổng Beta loại`.
@@ -104,6 +109,7 @@ __all__ = [
     "main",
     "parse_valid_during",
     "resolve_activity",
+    "split_chunk_at_article",
     "split_wabo_text",
 ]
 
@@ -295,6 +301,37 @@ def split_wabo_text(text: str, *, max_chars: int = WABO_CHUNK_MAX_CHARS) -> tupl
     return tuple(chunks)
 
 
+def split_chunk_at_article(chunk: str, *, marker: str) -> tuple[str, str]:
+    """Tách một đoạn thành hai tại đầu một điều ("Artikel X").
+
+    `marker` là đầu đề của điều bắt đầu đoạn thứ hai (vd "Artikel 8.3").
+    Đoạn đầu là toàn bộ văn bản trước điều đó, đoạn sau bắt đầu đúng
+    tại điều đó. Lỗi nếu không tìm thấy điều, điều nằm ở đầu đoạn,
+    hoặc một phía rỗng — không bao giờ trả đoạn rỗng.
+    """
+    marker = marker.strip()
+    if not marker:
+        raise ValueError("marker tách đoạn không được rỗng")
+    match = re.search(rf"^{re.escape(marker)}(?=\s|$)", chunk, re.MULTILINE)
+    if match is None:
+        raise ValueError(f"không tìm thấy {marker!r} trong đoạn")
+    if match.start() == 0:
+        raise ValueError(f"{marker!r} nằm ở đầu đoạn, không tách được")
+    first = chunk[: match.start()].strip()
+    second = chunk[match.start() :].strip()
+    if not first or not second:
+        raise ValueError(f"tách tại {marker!r} cho một phía rỗng")
+    return first, second
+
+
+def _split_named_chunk(chunks: Sequence[str], *, index: int, marker: str) -> tuple[str, ...]:
+    """Thay đoạn ở `index` bằng hai đoạn con tách tại `marker`."""
+    if not 0 <= index < len(chunks):
+        raise ValueError(f"chỉ số đoạn tách {index} ngoài 0..{len(chunks) - 1}")
+    first, second = split_chunk_at_article(chunks[index], marker=marker)
+    return (*chunks[:index], first, second, *chunks[index + 1 :])
+
+
 def resolve_activity(text: str, mapping: DutchMappingTable) -> str | None:
     """Mã hoạt động log cho một chuỗi mô hình viết.
 
@@ -414,6 +451,8 @@ def extract_wabo_rules(
     limit_chunks: int | None = None,
     chunks_out: Path | None = None,
     resume_from: Path | None = None,
+    split_chunk: int | None = None,
+    split_chunk_at: str | None = None,
 ) -> WaboExtraction:
     """Trích luật thứ tự từ Wabo: Reflector -> gắn khái niệm -> cổng Beta.
 
@@ -425,10 +464,17 @@ def extract_wabo_rules(
     model cho các đoạn còn thiếu — báo cáo cuối giống hệt chạy liền
     mạch. Khi nối lại vào một file khác, file mới chỉ chứa các đoạn
     chạy mới; muốn một file đầy đủ thì dùng cùng đường dẫn cho cả hai.
+    `split_chunk` + `split_chunk_at` tách đoạn đó thành hai tại ranh
+    giới Artikel TRƯỚC khi áp `limit_chunks`: các đoạn khác không đổi
+    nên file JSONL cũ vẫn nối lại được; hai cờ phải đi cùng nhau.
     """
     if limit_chunks is not None and limit_chunks < 1:
         raise ValueError(f"limit_chunks phải >= 1, nhận {limit_chunks}")
+    if (split_chunk is None) != (split_chunk_at is None):
+        raise ValueError("--split-chunk và --split-at phải đi cùng nhau")
     chunks = split_wabo_text(document.text)
+    if split_chunk is not None and split_chunk_at is not None:
+        chunks = _split_named_chunk(chunks, index=split_chunk, marker=split_chunk_at)
     if limit_chunks is not None:
         chunks = chunks[:limit_chunks]
     resumed = _load_chunk_lines(resume_from, chunks) if resume_from is not None else {}
@@ -624,6 +670,18 @@ def main(argv: list[str] | None = None) -> int:
         help="nạp các đoạn đã xong từ file JSONL rồi chạy tiếp (mặc định: chạy từ đầu)",
     )
     parser.add_argument(
+        "--split-chunk",
+        type=int,
+        default=None,
+        help="tách đoạn này thành hai tại ranh giới Artikel (cùng --split-at)",
+    )
+    parser.add_argument(
+        "--split-at",
+        type=str,
+        default=None,
+        help='đầu điều bắt đầu đoạn sau, vd "Artikel 8.3" (cùng --split-chunk)',
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -657,6 +715,8 @@ def main(argv: list[str] | None = None) -> int:
             limit_chunks=args.limit_chunks,
             chunks_out=args.chunks_out,
             resume_from=args.resume_from,
+            split_chunk=args.split_chunk,
+            split_chunk_at=args.split_at,
         )
     except (ModelCallError, ReflectorBatchError) as exc:
         print(f"lỗi mô hình: {exc}", file=sys.stderr)

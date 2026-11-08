@@ -30,6 +30,7 @@ from praxon_core.learning.wabo_rules import (
     main,
     parse_valid_during,
     resolve_activity,
+    split_chunk_at_article,
     split_wabo_text,
 )
 
@@ -255,6 +256,101 @@ def test_split_wabo_text_van_ban_rong():
     assert split_wabo_text("   \n  ") == ()
 
 
+def test_split_chunk_at_article_chia_dung_ranh_gioi():
+    chunk = (
+        "Artikel 8.1 Toon relaties in het eerste lid.\n\n"
+        "Artikel 8.2 Het tweede lid volgt.\n\n"
+        "Artikel 8.3 Toon relaties in het derde lid.\n\n"
+        "Artikel 8.4 Het vierde lid sluit af."
+    )
+    first, second = split_chunk_at_article(chunk, marker="Artikel 8.3")
+    assert first.startswith("Artikel 8.1")
+    assert "Artikel 8.2" in first
+    assert "Artikel 8.3" not in first
+    assert second.startswith("Artikel 8.3")
+    assert "Artikel 8.4" in second
+    assert f"{first}\n\n{second}" == chunk
+    with pytest.raises(ValueError):
+        split_chunk_at_article(chunk, marker="Artikel 8.5")
+    with pytest.raises(ValueError):
+        split_chunk_at_article(chunk, marker="Artikel 8.1")
+    with pytest.raises(ValueError):
+        split_chunk_at_article(chunk, marker="")
+    # "Artikel 8.3" không được khớp "Artikel 8.30" (số điều dài hơn).
+    with pytest.raises(ValueError):
+        split_chunk_at_article(
+            "Artikel 8.30 " + "x" * 10 + "\n\nArtikel 8.31 " + "y" * 10,
+            marker="Artikel 8.3",
+        )
+
+
+def test_tach_doan_50_thanh_53_doan():
+    """Đoạn 50 thật tách tại Artikel 8.3: 53 đoạn, 0-49 không đổi từng byte."""
+    cache = Path.home() / ".cache" / "praxon" / "wabo" / "wabo-2015-01-01.html"
+    if not cache.is_file():
+        pytest.skip("chưa tải văn bản Wabo về cache")
+    document = load_wabo_document(cache, mapping=default_dutch_mapping())
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 52
+    first, second = split_chunk_at_article(chunks[50], marker="Artikel 8.3")
+    assert first.startswith("Artikel 8.1")
+    assert "Artikel 8.2" in first
+    assert "Artikel 8.3" not in first
+    assert second.startswith("Artikel 8.3")
+    assert "Artikel 8.4" in second
+    assert len(first) == 1830
+    assert len(second) == 1976
+    assert f"{first}\n\n{second}" == chunks[50]
+    split = (*chunks[:50], first, second, chunks[51])
+    assert len(split) == 53
+    assert split[:50] == chunks[:50]
+    assert split[52] == chunks[51]
+
+
+def test_tach_doan_thieu_co_bao_loi():
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    with pytest.raises(ValueError):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=(),
+            policy=policy,
+            split_chunk=0,
+        )
+    with pytest.raises(ValueError):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=(),
+            policy=policy,
+            split_chunk_at="Artikel 1.1",
+        )
+    with pytest.raises(ValueError):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=(),
+            policy=policy,
+            split_chunk=5,
+            split_chunk_at="Artikel 1.1",
+        )
+    with pytest.raises(ValueError):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=(),
+            policy=policy,
+            split_chunk=0,
+            split_chunk_at="Artikel 9.9",
+        )
+
+
 def test_resolve_activity_khai_niem_va_ten_nl():
     mapping = default_dutch_mapping()
     assert resolve_activity("aanvraag", mapping) == AANVRAAG
@@ -440,6 +536,55 @@ def test_main_chay_duoc_voi_mo_hinh_gia(monkeypatch, tmp_path):
     )
     code = main(["--html", str(html_path), "--cache-dir", str(tmp_path)])
     assert code == 0
+
+
+def test_main_tach_doan_voi_co_split_chunk(monkeypatch, tmp_path):
+    """Cờ --split-chunk/--split-at tới được extract: 1 đoạn thành 2 lần gọi."""
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    document = WaboDocument(
+        source_url="https://example.invalid/wabo",
+        version="2015-01-01",
+        valid_start=datetime(2015, 1, 1, tzinfo=UTC),
+        valid_end=datetime(2015, 4, 1, tzinfo=UTC),
+        text=FAKE_TEXT,
+        sha256="giả",
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: document,
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+    calls: list[str] = []
+
+    class FakeReflector:
+        def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+            calls.append(text)
+            return ReflectorResult(insights=(), tokens_in=1, tokens_out=2)
+
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.build_reflector",
+        lambda settings, seed: FakeReflector(),
+    )
+    code = main(
+        [
+            "--html",
+            str(html_path),
+            "--cache-dir",
+            str(tmp_path),
+            "--split-chunk",
+            "0",
+            "--split-at",
+            "Artikel 3.1",
+        ]
+    )
+    assert code == 0
+    assert len(calls) == 2
+    assert calls[0].startswith("Wet algemene bepalingen")
+    assert calls[1].startswith("Artikel 3.1")
 
 
 def test_jsonl_ghi_dong_hop_le_va_nap_lai_duoc(monkeypatch, tmp_path):
@@ -678,3 +823,60 @@ def test_noi_lai_ton_trong_limit_chunks(tmp_path):
     )
     assert stub_noi.calls == list(chunks[2:4])
     assert _tom_tat(noi) == _tom_tat(chuan)
+
+
+def test_noi_lai_jsonl_50_dong_vao_danh_sach_53_doan(tmp_path):
+    """JSONL 50 dòng cũ nạp đủ vào danh sách 53 đoạn; chỉ 3 đoạn mới gọi model."""
+    cache = Path.home() / ".cache" / "praxon" / "wabo" / "wabo-2015-01-01.html"
+    if not cache.is_file():
+        pytest.skip("chưa tải văn bản Wabo về cache")
+    document = load_wabo_document(cache, mapping=default_dutch_mapping())
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    traces = _traces_day_du(30)
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 52
+    chunks_path = tmp_path / "chunks.jsonl"
+    stub_50 = _ChunkStub()
+    extract_wabo_rules(
+        reflect_document=stub_50.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        limit_chunks=50,
+        chunks_out=chunks_path,
+    )
+    assert len(chunks_path.read_text(encoding="utf-8").splitlines()) == 50
+    assert len(stub_50.calls) == 50
+    stub_noi = _ChunkStub()
+    noi = extract_wabo_rules(
+        reflect_document=stub_noi.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+        resume_from=chunks_path,
+        split_chunk=50,
+        split_chunk_at="Artikel 8.3",
+    )
+    assert len(stub_noi.calls) == 3
+    assert stub_noi.calls[0].startswith("Artikel 8.1")
+    assert stub_noi.calls[1].startswith("Artikel 8.3")
+    assert stub_noi.calls[2] == chunks[51]
+    lines = chunks_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 53
+    assert [json.loads(line)["chunk_index"] for line in lines] == list(range(53))
+    stub_chuan = _ChunkStub()
+    chuan = extract_wabo_rules(
+        reflect_document=stub_chuan.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        split_chunk=50,
+        split_chunk_at="Artikel 8.3",
+    )
+    assert _tom_tat(noi) == _tom_tat(chuan)
+    assert format_wabo_report(noi) == format_wabo_report(chuan)
