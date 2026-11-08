@@ -246,12 +246,33 @@ def _trace_batch_prompt(batch: Sequence[Trajectory], facts: Sequence[FactRead]) 
     return "\n".join(lines)
 
 
+#: Phiên bản prompt tài liệu (khối từ vựng v2, xem `DOCUMENT_VOCAB_BLOCK`).
+DOCUMENT_PROMPT_VERSION = "v2"
+
+#: Khối từ vựng v2 cho prompt tài liệu (đề xuất trích lại 9.1, Phụ lục A):
+#: chỉ 13 khái niệm Hà Lan đã gắn, KHÔNG kèm mã log trong ngoặc. Mã trong
+#: ngoặc khiến model chép y nguyên "khái niệm (mã)" vào activation/target
+#: nên khớp chính xác trượt hết (thí nghiệm khối v1: đoạn 0 đạt 0/12);
+#: cổng kiểm bước 0 với khối này đạt 12/12 tuân thủ trên đoạn 0.
+DOCUMENT_VOCAB_BLOCK = (
+    "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
+    "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
+    "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
+    "verlengen, buiten behandeling, intrekken, bekendmaking. Không dùng số "
+    "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
+    "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
+    "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
+    "khái niệm trên thì trả danh sách rỗng."
+)
+
+
 def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
     """Prompt cho tài liệu quy trình: chỉ trích luật thứ tự."""
     return "\n".join(
         [
             "Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.",
             "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ.",
+            DOCUMENT_VOCAB_BLOCK,
             "",
             "Tài liệu:",
             document_text,

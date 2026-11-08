@@ -9,10 +9,12 @@ ghi sẵn (không qua adapter) để tới được đường parse của Reflec
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -47,8 +49,12 @@ from praxon_core.learning.declare_schema import (
 from praxon_core.learning.generator import EpisodeRow, Trajectory
 from praxon_core.learning.measures import Measures
 from praxon_core.learning.reflector import (
+    DOCUMENT_PROMPT_VERSION,
+    DOCUMENT_VOCAB_BLOCK,
     Reflector,
     ReflectorBatchError,
+    _document_prompt,
+    _trace_batch_prompt,
     reflector_from_settings,
 )
 from praxon_core.learning.rules import default_rule_table
@@ -679,3 +685,73 @@ def test_loi_vinh_vien_khong_thu_lai():
         reflector.reflect([_trajectory("c1", ["A", "B"])], [])
     assert len(server.calls) == 1
     assert isinstance(excinfo.value.__cause__, ModelCallError)
+
+
+# --- Prompt tài liệu v2 (đề xuất trích lại 9.1, phương án D) ---
+
+#: Khối từ vựng v2 nguyên văn (Phụ lục A của đề xuất trích lại): chỉ 13
+#: khái niệm Hà Lan đã gắn, KHÔNG kèm mã log trong ngoặc.
+VOCAB_BLOCK_V2 = (
+    "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
+    "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
+    "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
+    "verlengen, buiten behandeling, intrekken, bekendmaking. Không dùng số "
+    "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
+    "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
+    "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
+    "khái niệm trên thì trả danh sách rỗng."
+)
+
+#: SHA-256 của prompt thí nghiệm bước 0 (đoạn 0 thật, khối v2): ghi trong
+#: `~/workspace/praxon-9.1-prompt-test/vocab-chunks-v2.jsonl`, đã kiểm độc
+#: lập từ JSONL. Prompt repo sau khi sửa phải khớp đúng SHA này.
+PROMPT_SHA_DOAN_0_V2 = "0fd345801a2e0a5a29cffe1a7683bf1b976f7a1b685d8c1d205349308eb936dd"
+
+
+def test_document_prompt_chua_khoi_tu_vung_v2_nguyen_van():
+    """Prompt tài liệu chứa đúng khối v2 nguyên văn, đúng một lần, đúng vị trí."""
+    assert DOCUMENT_PROMPT_VERSION == "v2"
+    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V2
+    prompt = _document_prompt("Văn bản mẫu.", ())
+    assert prompt.count(VOCAB_BLOCK_V2) == 1
+    lines = prompt.split("\n")
+    assert lines[0] == ("Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.")
+    assert lines[1] == (
+        "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ."
+    )
+    assert lines[2] == VOCAB_BLOCK_V2
+    assert lines[3] == ""
+    assert lines[4] == "Tài liệu:"
+    assert lines[5] == "Văn bản mẫu."
+    assert "01_HOOFD" not in prompt
+    assert "10_UOV" not in prompt
+
+
+def test_document_prompt_doan_0_khop_sha_thi_nghiem_buoc_0():
+    """Prompt đoạn 0 thật khớp SHA với prompt thí nghiệm bước 0 (khối v2)."""
+    from praxon_core.learning.wabo_rules import (
+        extract_wabo_text,
+        split_wabo_text,
+    )
+
+    cache = Path.home() / ".cache" / "praxon" / "wabo" / "wabo-2015-01-01.html"
+    if not cache.is_file():
+        pytest.skip("chưa tải văn bản Wabo về cache")
+    chunks = split_wabo_text(extract_wabo_text(cache.read_text(encoding="utf-8")))
+    prompt = _document_prompt(chunks[0], ())
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_0_V2
+
+
+def test_trace_batch_prompt_khong_doi_khi_sua_prompt_tai_lieu():
+    """Hồi quy: prompt đường trace không đổi khi sửa prompt tài liệu."""
+    prompt = _trace_batch_prompt([_trajectory("case-1", ["A", "B"])], [])
+    assert prompt == (
+        "Đề xuất luật thứ tự Declare (response/precedence) từ các trace sau.\n"
+        "Chỉ đề xuất luật có bằng chứng trong trace; trả JSON theo lược đồ.\n"
+        "\n"
+        "Trace (case_id: hoạt động theo thứ tự):\n"
+        "- case-1: A -> B\n"
+        "\n"
+        "Fact hiện hành (đừng đề xuất lại):\n"
+        "Chưa có fact nào."
+    )
