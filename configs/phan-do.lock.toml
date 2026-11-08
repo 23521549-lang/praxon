@@ -1,18 +1,16 @@
 # Bản ghi khóa cấu hình phần đo (task 12.1, spec dòng 152).
-# CHƯA KHÓA - bản ghi tạm để test chạy được; KHÔNG dùng để chạy đo thật.
-# Commit đưa file này + configs/phan-do.toml vào repo LÀ khóa; mã commit
-# đó ghi ở lock_commit dưới đây. Không sửa file này tại chỗ - khóa lại
+# ĐÃ KHÓA - bản ghi thật; commit đưa file này + configs/phan-do.toml vào repo
+# LÀ khóa (xem lock_commit dưới đây). Không sửa file này tại chỗ - khóa lại
 # bằng commit khóa mới (đề xuất 12.1, mục 5, R5).
 # locked_config_hash dưới đây là hash thật tính từ configs/phan-do.toml
-# tạm (để test file-khớp-hash chạy được); lock_commit, code_commit và
-# data_hash đang là toàn số 0 vì chưa có bước khóa thật nào.
-locked_config_hash = "4ef1fc08e0c2d63f3b86a1d00386faf629955660fedef8ab37cbf60bebfd133c"
+# đã khóa; lock_commit và code_commit là mã commit khóa L1 (ghi ở commit L2).
+locked_config_hash = "13e98fec4a6088cf30b63c1efea594460193be605efaf957eb5d548d4a225f20"
 lock_commit = "0000000000000000000000000000000000000000"
 code_commit = "0000000000000000000000000000000000000000"
 seed = 0
 model_id = "Qwen/Qwen3-8B-GGUF"
 model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
-data_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+data_hash = "6564b2e2ef6cbc7e18606ac74940931d59c5adb517572d9f943578fbfcf58783"
 cache = "empty"
-locked_at = "CHUA-KHOA"
-locked_by = "CHUA-KHOA"
+locked_at = "2026-11-08"
+locked_by = "Huỳnh Ngọc Thuận"

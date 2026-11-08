@@ -8,7 +8,7 @@
 
 bootstrap_draws = 1000
 openai_base_url = "http://localhost:8080/v1"
-cpu_model_base_url = "http://localhost:8080/v1"
+cpu_model_base_url = "http://llm-proxy:8081/v1"
 model_id = "Qwen/Qwen3-8B-GGUF"
 model_revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
 model_max_retries = 3
@@ -17,6 +17,6 @@ model_timeout_seconds = 1800.0
 reflector_batch_size = 10
 reflector_max_insights_per_batch = 20
 checkpoint_every_n_cases = 100
-checkpoint_store = "local"
+checkpoint_store = "s3"
 token_budget_total = 0
 token_budget_reserve_per_call = 2048
