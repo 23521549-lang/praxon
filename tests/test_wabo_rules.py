@@ -6,12 +6,14 @@ bản thật (skip khi cache trống, như test tải bộ 104 câu của 6.5).
 """
 
 import hashlib
+import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from praxon_core.adapters.language_model import ModelCallError
 from praxon_core.declare.index import Trace
 from praxon_core.learning.coordinator import ReflectorResult
 from praxon_core.learning.curator import FactRead, Insight, InsightSource
@@ -19,6 +21,7 @@ from praxon_core.learning.dutch_mapping import DutchMappingTable, default_dutch_
 from praxon_core.learning.rules import default_rule_table
 from praxon_core.learning.wabo_rules import (
     WaboDocument,
+    WaboExtraction,
     extract_wabo_rules,
     extract_wabo_text,
     format_wabo_report,
@@ -117,6 +120,63 @@ def _insight(
 def _traces_aanvraag_roi_ontwerp(n: int) -> tuple[Trace, ...]:
     """N trace: đơn (aanvraag) rồi quyết định dự thảo (ontwerpbesluit)."""
     return tuple(Trace((AANVRAAG, ONTWERP)) for _ in range(n))
+
+
+def _traces_day_du(n: int) -> tuple[Trace, ...]:
+    """N trace: aanvraag -> ontwerpbesluit -> bezwaar (cả ba luật đều đủ bằng chứng)."""
+    return tuple(Trace((AANVRAAG, ONTWERP, BEZWAAR)) for _ in range(n))
+
+
+def _fake_document_nhieu_doan() -> WaboDocument:
+    """Văn bản giả 3 điều dài: tách thành 6 đoạn (mỗi điều cắt làm đôi)."""
+    text = "\n\n".join(
+        [
+            "Artikel 1.1 " + "a" * 4500,
+            "Artikel 1.2 " + "b" * 4500,
+            "Artikel 1.3 " + "c" * 4500,
+        ]
+    )
+    return _fake_document(text)
+
+
+class _ChunkStub:
+    """Mô hình giả: trả luật theo chữ lấp đầy đoạn; ghi lại đoạn đã gọi.
+
+    `fail_after=k` thì chết (ModelCallError) ở lần gọi thứ k+1, mô
+    phỏng lần chạy hỏng giữa chừng.
+    """
+
+    def __init__(self, fail_after: int | None = None) -> None:
+        self.calls: list[str] = []
+        self.fail_after: int | None = fail_after
+
+    def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+        if self.fail_after is not None and len(self.calls) >= self.fail_after:
+            raise ModelCallError("mô hình giả chết sau k đoạn")
+        self.calls.append(text)
+        if "b" * 10 in text:
+            insight = _insight("response", "aanvraag", "bezwaar")
+        elif "c" * 10 in text:
+            insight = _insight("response", "ontwerpbesluit", "bezwaar")
+        else:
+            insight = _insight("response", "aanvraag", "ontwerpbesluit")
+        return ReflectorResult(insights=(insight,), tokens_in=10, tokens_out=20)
+
+
+def _tom_tat(
+    extraction: WaboExtraction,
+) -> tuple[int, int, int, int, int, int, int, tuple[str, ...]]:
+    """Tóm tắt để so tương đương: số đếm theo cổng + luật đã chấp nhận."""
+    return (
+        extraction.extracted,
+        extraction.unmapped,
+        extraction.conditional,
+        extraction.beta_filtered,
+        extraction.accepted,
+        extraction.tokens_in,
+        extraction.tokens_out,
+        tuple(fact.canonical_key for fact in extraction.facts),
+    )
 
 
 def test_boc_text_html_loai_the_giu_noi_dung():
@@ -380,3 +440,241 @@ def test_main_chay_duoc_voi_mo_hinh_gia(monkeypatch, tmp_path):
     )
     code = main(["--html", str(html_path), "--cache-dir", str(tmp_path)])
     assert code == 0
+
+
+def test_jsonl_ghi_dong_hop_le_va_nap_lai_duoc(monkeypatch, tmp_path):
+    """Main với --chunks-out: mỗi dòng JSON hợp lệ, Insight validate được."""
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    document = WaboDocument(
+        source_url="https://example.invalid/wabo",
+        version="2015-01-01",
+        valid_start=datetime(2015, 1, 1, tzinfo=UTC),
+        valid_end=datetime(2015, 4, 1, tzinfo=UTC),
+        text=FAKE_TEXT,
+        sha256="giả",
+    )
+    insights = [_insight("response", "aanvraag", "ontwerpbesluit")]
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: document,
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+
+    class FakeReflector:
+        def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+            return ReflectorResult(insights=tuple(insights), tokens_in=5, tokens_out=6)
+
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.build_reflector",
+        lambda settings, seed: FakeReflector(),
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    code = main(
+        [
+            "--html",
+            str(html_path),
+            "--cache-dir",
+            str(tmp_path),
+            "--chunks-out",
+            str(chunks_path),
+        ]
+    )
+    assert code == 0
+    chunk = split_wabo_text(FAKE_TEXT)[0]
+    lines = chunks_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    data = json.loads(lines[0])
+    assert data["chunk_index"] == 0
+    assert data["chunk_chars"] == len(chunk)
+    assert data["chunk_sha256"] == hashlib.sha256(chunk.encode("utf-8")).hexdigest()
+    assert data["tokens_in"] == 5
+    assert data["tokens_out"] == 6
+    loaded = [Insight.model_validate(item) for item in data["insights"]]
+    assert len(loaded) == 1
+    assert loaded[0].template == "response"
+    assert loaded[0].activation == "aanvraag"
+    assert loaded[0].target == "ontwerpbesluit"
+
+
+def test_noi_lai_tuong_duong_chay_lien_mach(tmp_path):
+    """Chết sau 3 đoạn rồi nối lại: báo cáo == chạy liền mạch, stub chỉ gọi đoạn thiếu."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document_nhieu_doan()
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 6
+    traces = _traces_day_du(30)
+    stub_chuan = _ChunkStub()
+    chuan = extract_wabo_rules(
+        reflect_document=stub_chuan.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    stub_chet = _ChunkStub(fail_after=3)
+    with pytest.raises(ModelCallError):
+        extract_wabo_rules(
+            reflect_document=stub_chet.reflect_document,
+            document=document,
+            mapping=mapping,
+            traces=traces,
+            policy=policy,
+            chunks_out=chunks_path,
+        )
+    assert len(stub_chet.calls) == 3
+    assert len(chunks_path.read_text(encoding="utf-8").splitlines()) == 3
+    stub_noi = _ChunkStub()
+    noi = extract_wabo_rules(
+        reflect_document=stub_noi.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+        resume_from=chunks_path,
+    )
+    assert stub_noi.calls == list(chunks[3:])
+    assert _tom_tat(noi) == _tom_tat(chuan)
+    assert format_wabo_report(noi) == format_wabo_report(chuan)
+
+
+def test_duoi_jsonl_hong_bi_bo_het_va_chay_lai(tmp_path, capsys):
+    """Dòng cắt dở + dòng hợp lệ sau nó đều bị bỏ; đoạn đó chạy lại, kết quả đúng."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document_nhieu_doan()
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 6
+    traces = _traces_day_du(30)
+    stub_chuan = _ChunkStub()
+    chuan = extract_wabo_rules(
+        reflect_document=stub_chuan.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    extract_wabo_rules(
+        reflect_document=_ChunkStub().reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+    )
+    lines = chunks_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 6
+    hong = '{"chunk_index": 3, "chunk_chars": 12'
+    chunks_path.write_text(
+        "\n".join([*lines[:3], hong, lines[4], lines[5]]) + "\n", encoding="utf-8"
+    )
+    stub = _ChunkStub()
+    noi = extract_wabo_rules(
+        reflect_document=stub.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+        resume_from=chunks_path,
+    )
+    assert stub.calls == list(chunks[3:])
+    assert _tom_tat(noi) == _tom_tat(chuan)
+    assert "cảnh báo" in capsys.readouterr().err
+
+
+def test_dong_jsonl_sai_sha_bi_bo_va_chay_lai(tmp_path):
+    """Dòng có SHA không khớp đoạn vừa tách thì bị bỏ cùng toàn bộ sau."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document_nhieu_doan()
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 6
+    traces = _traces_day_du(30)
+    stub_chuan = _ChunkStub()
+    chuan = extract_wabo_rules(
+        reflect_document=stub_chuan.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    extract_wabo_rules(
+        reflect_document=_ChunkStub().reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+    )
+    lines = chunks_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 6
+    data = json.loads(lines[2])
+    data["chunk_sha256"] = "0" * 64
+    lines[2] = json.dumps(data, ensure_ascii=False)
+    chunks_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    stub = _ChunkStub()
+    noi = extract_wabo_rules(
+        reflect_document=stub.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+        resume_from=chunks_path,
+    )
+    assert stub.calls == list(chunks[2:])
+    assert _tom_tat(noi) == _tom_tat(chuan)
+
+
+def test_noi_lai_ton_trong_limit_chunks(tmp_path):
+    """--limit-chunks áp trước: nối lại chỉ chạy các đoạn còn thiếu dưới N."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document_nhieu_doan()
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 6
+    traces = _traces_day_du(30)
+    stub_chuan = _ChunkStub()
+    chuan = extract_wabo_rules(
+        reflect_document=stub_chuan.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        limit_chunks=4,
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    stub_chet = _ChunkStub(fail_after=2)
+    with pytest.raises(ModelCallError):
+        extract_wabo_rules(
+            reflect_document=stub_chet.reflect_document,
+            document=document,
+            mapping=mapping,
+            traces=traces,
+            policy=policy,
+            limit_chunks=4,
+            chunks_out=chunks_path,
+        )
+    assert len(chunks_path.read_text(encoding="utf-8").splitlines()) == 2
+    stub_noi = _ChunkStub()
+    noi = extract_wabo_rules(
+        reflect_document=stub_noi.reflect_document,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        limit_chunks=4,
+        chunks_out=chunks_path,
+        resume_from=chunks_path,
+    )
+    assert stub_noi.calls == list(chunks[2:4])
+    assert _tom_tat(noi) == _tom_tat(chuan)

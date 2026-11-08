@@ -47,19 +47,30 @@ Quyết định thiết kế (ghi rõ để review):
   có điều kiện thuộc về 9.5 (BPIC 2019), không thuộc task này.
 - Khái niệm không gắn được bị bỏ qua (đếm riêng): không bịa gắn
   (quy tắc của 9.2).
+- Lưu từng đoạn ra JSONL (`--chunks-out`): mỗi đoạn xong ghi ngay một
+  dòng (chỉ số đoạn, độ dài + SHA-256 văn bản đoạn, insights,
+  token) rồi flush + fsync; chạy lại với `--resume-from` thì nạp
+  tiền tố liên tục hợp lệ rồi chỉ gọi model cho các đoạn còn thiếu —
+  báo cáo cuối giống hệt chạy liền mạch. Dòng hỏng (chết đúng lúc
+  ghi) hoặc dòng không khớp đoạn vừa tách thì bị bỏ cùng toàn bộ
+  dòng sau, đoạn đó chạy lại; không bao giờ tin dữ liệu hỏng.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import os
 import re
 import sys
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import TextIO
 
 from praxon_core.adapters.language_model import ModelCallError, model_from_settings
 from praxon_core.datasets.bpic2015 import BPIC2015_DATASETS
@@ -302,6 +313,97 @@ def resolve_activity(text: str, mapping: DutchMappingTable) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class _LoadedChunk:
+    """Một đoạn đã nạp từ file JSONL: insights + token đã ghi."""
+
+    insights: tuple[Insight, ...]
+    tokens_in: int
+    tokens_out: int
+
+
+def _write_chunk_line(
+    handle: TextIO,
+    *,
+    chunk_index: int,
+    chunk: str,
+    result: ReflectorResult,
+) -> None:
+    """Ghi một dòng JSONL cho đoạn vừa xong, rồi flush + fsync ngay."""
+    line = {
+        "chunk_index": chunk_index,
+        "chunk_chars": len(chunk),
+        "chunk_sha256": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+        "insights": [insight.model_dump(mode="json") for insight in result.insights],
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+    }
+    handle.write(json.dumps(line, ensure_ascii=False) + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+
+
+def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChunk]:
+    """Nạp tiền tố liên tục hợp lệ của file JSONL, theo chỉ số đoạn.
+
+    Mỗi dòng phải parse JSON được, đúng kiểu từng trường, `Insight`
+    validate được, và `chunk_chars`/`chunk_sha256` khớp đoạn vừa tách
+    ở đúng chỉ số đó. Gặp dòng đầu tiên không hợp lệ thì bỏ dòng đó
+    và toàn bộ dòng sau, cảnh báo ra stderr, chạy lại từ đoạn đó.
+    File không có hoặc không đọc được thì coi như chưa có đoạn nào.
+    """
+    loaded: dict[int, _LoadedChunk] = {}
+    if not path.is_file():
+        print(f"cảnh báo: không có file JSONL để nối lại: {path}", file=sys.stderr)
+        return loaded
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        print(f"cảnh báo: không đọc được file JSONL {path}: {exc}", file=sys.stderr)
+        return loaded
+    for raw in lines:
+        if not raw.strip():
+            continue
+        expected = len(loaded)
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise ValueError("dòng JSONL không phải object")
+            index = data["chunk_index"]
+            chars = data["chunk_chars"]
+            digest = data["chunk_sha256"]
+            raw_insights = data["insights"]
+            tokens_in = data["tokens_in"]
+            tokens_out = data["tokens_out"]
+            if type(index) is not int or index != expected:
+                raise ValueError(f"chunk_index {index!r} khác đoạn chờ {expected}")
+            if index >= len(chunks):
+                raise ValueError(f"chunk_index {index} vượt số đoạn {len(chunks)}")
+            if type(chars) is not int or chars != len(chunks[index]):
+                raise ValueError(f"chunk_chars {chars!r} không khớp đoạn {index}")
+            if digest != hashlib.sha256(chunks[index].encode("utf-8")).hexdigest():
+                raise ValueError(f"chunk_sha256 không khớp đoạn {index}")
+            if not isinstance(raw_insights, list):
+                raise ValueError("insights không phải danh sách")
+            if type(tokens_in) is not int or type(tokens_out) is not int:
+                raise ValueError("tokens_in/tokens_out không phải số nguyên")
+            if tokens_in < 0 or tokens_out < 0:
+                raise ValueError("tokens_in/tokens_out âm")
+            insights = tuple(Insight.model_validate(item) for item in raw_insights)
+        except (KeyError, TypeError, ValueError) as exc:
+            print(
+                f"cảnh báo: bỏ dòng JSONL hỏng ở đoạn {expected} và toàn bộ sau: {exc}",
+                file=sys.stderr,
+            )
+            break
+        loaded[index] = _LoadedChunk(
+            insights=insights,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    return loaded
+
+
 def extract_wabo_rules(
     *,
     reflect_document: Callable[[str, Sequence[FactRead]], ReflectorResult],
@@ -310,26 +412,48 @@ def extract_wabo_rules(
     traces: Sequence[DeclareTrace],
     policy: Policy,
     limit_chunks: int | None = None,
+    chunks_out: Path | None = None,
+    resume_from: Path | None = None,
 ) -> WaboExtraction:
     """Trích luật thứ tự từ Wabo: Reflector -> gắn khái niệm -> cổng Beta.
 
     `reflect_document` là đường vào tài liệu của Reflector (6.4) hoặc
     hàm giả trong test — module này không gọi mô hình trực tiếp.
     `limit_chunks` chỉ chạy N đoạn đầu (chạy thử nhanh); None là toàn bộ.
+    `chunks_out` ghi mỗi đoạn vừa xong ra file JSONL (append + flush +
+    fsync); `resume_from` nạp các đoạn đã xong từ file đó rồi chỉ gọi
+    model cho các đoạn còn thiếu — báo cáo cuối giống hệt chạy liền
+    mạch. Khi nối lại vào một file khác, file mới chỉ chứa các đoạn
+    chạy mới; muốn một file đầy đủ thì dùng cùng đường dẫn cho cả hai.
     """
     if limit_chunks is not None and limit_chunks < 1:
         raise ValueError(f"limit_chunks phải >= 1, nhận {limit_chunks}")
     chunks = split_wabo_text(document.text)
     if limit_chunks is not None:
         chunks = chunks[:limit_chunks]
+    resumed = _load_chunk_lines(resume_from, chunks) if resume_from is not None else {}
     insights: list[Insight] = []
     tokens_in = 0
     tokens_out = 0
-    for chunk in chunks:
-        result = reflect_document(chunk, ())
-        insights.extend(result.insights)
-        tokens_in += result.tokens_in
-        tokens_out += result.tokens_out
+    with ExitStack() as stack:
+        handle = (
+            stack.enter_context(open(chunks_out, "a", encoding="utf-8"))
+            if chunks_out is not None
+            else None
+        )
+        for index, chunk in enumerate(chunks):
+            if index in resumed:
+                loaded = resumed[index]
+                insights.extend(loaded.insights)
+                tokens_in += loaded.tokens_in
+                tokens_out += loaded.tokens_out
+                continue
+            result = reflect_document(chunk, ())
+            insights.extend(result.insights)
+            tokens_in += result.tokens_in
+            tokens_out += result.tokens_out
+            if handle is not None:
+                _write_chunk_line(handle, chunk_index=index, chunk=chunk, result=result)
     seen: set[tuple[str, str, str, str | None]] = set()
     unique: list[Insight] = []
     for insight in insights:
@@ -488,6 +612,18 @@ def main(argv: list[str] | None = None) -> int:
         help="chỉ chạy N đoạn đầu (chạy thử nhanh)",
     )
     parser.add_argument(
+        "--chunks-out",
+        type=Path,
+        default=None,
+        help="ghi mỗi đoạn đã xong ra file JSONL (mặc định: không ghi)",
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="nạp các đoạn đã xong từ file JSONL rồi chạy tiếp (mặc định: chạy từ đầu)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -519,6 +655,8 @@ def main(argv: list[str] | None = None) -> int:
             traces=traces,
             policy=policy,
             limit_chunks=args.limit_chunks,
+            chunks_out=args.chunks_out,
+            resume_from=args.resume_from,
         )
     except (ModelCallError, ReflectorBatchError) as exc:
         print(f"lỗi mô hình: {exc}", file=sys.stderr)
