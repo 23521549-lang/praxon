@@ -872,6 +872,17 @@ def run_phase1(
     )
     print(f"báo cáo JSON: {report_path}")
     # 8. So với JSON đã ghi của 12.2 (chỉ hàng BPIC có tham chiếu).
+    # Chế độ smoke được miễn: số BPIC smoke là giả theo thiết kế (driver
+    # giả, hàm băm xác định), `code_commit` là HEAD lúc push — không bao
+    # giờ khớp số đo thật của 12.2. Cổng so sánh chỉ có ý nghĩa với lần
+    # chạy thật (không-smoke); so hai lần chạy smoke với nhau vẫn có bước
+    # `--compare out1 vs out2` ở CI.
+    if smoke:
+        print(
+            "Bỏ qua bước so sánh với JSON 12.2: chế độ smoke dùng số BPIC "
+            "giả theo thiết kế, không so với số đo thật.",
+        )
+        return 0
     if not reference_path.is_file():
         print(
             "CẢNH BÁO: chưa có JSON đã ghi của 12.2 "

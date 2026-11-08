@@ -111,6 +111,43 @@ def _run_smoke(
     return code, report, out_dir, bpic_dir
 
 
+def _run_khong_smoke(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    reference_path: Path | None = None,
+    checkpoint_store: str = "local",
+) -> tuple[int, dict[str, object] | None, Path, Path]:
+    """Chạy `run_phase1` không-smoke với driver giả + luật rỗng; trả như `_run_smoke`.
+
+    Kiểm cổng so sánh bước 8 của lần chạy thật mà không cần model hay dữ
+    liệu thật: trích Wabo chèn sẵn rỗng, driver BPIC là mock.
+    """
+    config_path, lock_path = _write_locked_config(
+        tmp_path, monkeypatch, checkpoint_store=checkpoint_store
+    )
+    cache_dir = tmp_path / "cache"
+    bpic_dir = _write_stub_bpic(cache_dir)
+    out_dir = tmp_path / "out"
+    reference = reference_path or tmp_path / "khong-co-tham-chieu.json"
+    code = run_phase1(
+        config_path=config_path,
+        lock_path=lock_path,
+        reference_path=reference,
+        out_dir=out_dir,
+        cache_dir=cache_dir,
+        smoke=False,
+        code_commit=CODE_COMMIT,
+        bpic_runner=_mock_bpic_runner,
+        extract_rules=lambda _settings, _cache_dir: frozenset(),
+    )
+    report_path = out_dir / "phase1-report.json"
+    report = None
+    if report_path.is_file():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    return code, report, out_dir, bpic_dir
+
+
 def _matching_reference(report: dict[str, object], bpic_dir: Path) -> dict[str, object]:
     """Tham chiếu 12.2 khớp đúng lần chạy: hàng BPIC + metadata khớp.
 
@@ -168,7 +205,9 @@ def test_tham_chieu_khop_thi_exit_0(pg, tmp_path, monkeypatch):
     assert code == 0
 
 
-def test_tham_chieu_lech_mot_chi_so_thi_exit_4(pg, tmp_path, monkeypatch):
+def test_smoke_tham_chieu_lech_thi_exit_0(pg, tmp_path, monkeypatch):
+    # Smoke được miễn bước 8: số BPIC smoke là giả theo thiết kế, không
+    # so với số đo thật — tham chiếu lệch vẫn exit 0, báo cáo vẫn ghi.
     _code, report, _out, bpic_dir = _run_smoke(tmp_path, monkeypatch)
     assert report is not None
     reference = _matching_reference(report, bpic_dir)
@@ -183,7 +222,29 @@ def test_tham_chieu_lech_mot_chi_so_thi_exit_4(pg, tmp_path, monkeypatch):
     rows[0] = first
     reference_path = tmp_path / "tham-chieu-lech.json"
     reference_path.write_text(json.dumps(reference, indent=2), encoding="utf-8")
-    code, _report2, _out2, _bpic2 = _run_smoke(
+    code, report2, _out2, _bpic2 = _run_smoke(
+        tmp_path, monkeypatch, reference_path=reference_path
+    )
+    assert code == 0
+    assert report2 is not None
+
+
+def test_khong_smoke_tham_chieu_lech_mot_chi_so_thi_exit_4(pg, tmp_path, monkeypatch):
+    _code, report, _out, bpic_dir = _run_khong_smoke(tmp_path, monkeypatch)
+    assert report is not None
+    reference = _matching_reference(report, bpic_dir)
+    rows = reference["rows"]
+    assert isinstance(rows, list) and rows
+    first = dict(rows[0])
+    metrics = dict(first["metrics"])
+    precision = dict(metrics["precision"])
+    precision["value"] = precision["value"] + 0.01
+    metrics["precision"] = precision
+    first["metrics"] = metrics
+    rows[0] = first
+    reference_path = tmp_path / "tham-chieu-lech.json"
+    reference_path.write_text(json.dumps(reference, indent=2), encoding="utf-8")
+    code, _report2, _out2, _bpic2 = _run_khong_smoke(
         tmp_path, monkeypatch, reference_path=reference_path
     )
     assert code == 4
