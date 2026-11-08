@@ -345,6 +345,76 @@ def _reference_metadata(reference: dict[str, object]) -> _RunMetadata | None:
     return None
 
 
+def _compare_row_maps(
+    first: dict[tuple[str, str, str], dict[str, object]],
+    second: dict[tuple[str, str, str], dict[str, object]],
+    extra_label: str,
+    missing_label: str,
+) -> list[str]:
+    """So hai bản đồ hàng theo khóa (nguồn, tenant, điều kiện).
+
+    Hàng chỉ có ở một phía báo thừa/thiếu; hàng chung so bốn chỉ số
+    bằng nhau tuyệt đối trên giá trị + cả hai cận (12.3 H6, không dung
+    sai). Trả danh sách khoảng; rỗng = trùng.
+    """
+    gaps: list[str] = []
+    for key in sorted(set(first) - set(second)):
+        gaps.append(f"{extra_label}: {key}")
+    for key in sorted(set(second) - set(first)):
+        gaps.append(f"{missing_label}: {key}")
+    for key in sorted(set(first) & set(second)):
+        left = first[key]
+        right = second[key]
+        for diff in _metrics_equal(
+            cast(dict[str, dict[str, float]], left["metrics"]),
+            cast(dict[str, dict[str, float]], right["metrics"]),
+        ):
+            gaps.append(f"{key}: {diff}")
+    return gaps
+
+
+def _metadata_gaps(
+    run: dict[str, object],
+    reference: dict[str, object],
+    run_missing: str,
+    reference_missing: str,
+) -> list[str]:
+    """Sáu điều kiện tái lập spec 191 giữa hai báo cáo; rỗng = trùng.
+
+    Metadata lấy từ đỉnh báo cáo (hoặc trong `note`, xem
+    `_reference_metadata`); thiếu một trường hoặc sai kiểu thì báo thiếu
+    metadata (fail-closed, không đoán). `cache_intact` lấy từ phía lần
+    chạy, mặc định đúng khi báo cáo không mang trường này.
+    """
+    ref_meta = _reference_metadata(reference)
+    run_meta = _reference_metadata(run)
+    if ref_meta is None:
+        return [reference_missing]
+    if run_meta is None:
+        return [run_missing]
+    record = RunRow(
+        tenant_id="",
+        seed=ref_meta["seed"],
+        model_id=ref_meta["model_id"],
+        model_revision=ref_meta["model_revision"],
+        code_commit=ref_meta["code_commit"],
+        config_hash=ref_meta["config_hash"],
+        data_hash=ref_meta["data_hash"],
+    )
+    return list(
+        reproducibility_gaps(
+            record,
+            seed=run_meta["seed"],
+            model_id=run_meta["model_id"],
+            model_revision=run_meta["model_revision"],
+            code_commit=run_meta["code_commit"],
+            config_hash=run_meta["config_hash"],
+            data_hash=run_meta["data_hash"],
+            cache_intact=bool(run.get("cache_intact", True)),
+        )
+    )
+
+
 def compare_reports(run: dict[str, object], reference: dict[str, object]) -> list[str]:
     """So báo cáo lần chạy này với JSON đã ghi của 12.2; rỗng = trùng.
 
@@ -352,11 +422,10 @@ def compare_reports(run: dict[str, object], reference: dict[str, object]) -> lis
     `reproducibility_gaps` (seed, model, code_commit, config_hash,
     data_hash nửa BPIC, đệm); (b) bốn chỉ số từng hàng BPIC bằng nhau
     tuyệt đối trên giá trị + cả hai cận (12.3 H6, không dung sai). Hàng
-    bộ chuẩn không có trong tham chiếu nên không so ở đây — chúng do phép
-    so run1-vs-run2 của job CI kiểm. Sai schema ở bên nào cũng là một
-    khoảng (fail-closed, không bỏ qua im lặng).
+    bộ chuẩn không có trong tham chiếu nên không so ở đây — chúng do
+    `compare_runs` (phép so run1-vs-run2 của job CI) kiểm. Sai schema ở
+    bên nào cũng là một khoảng (fail-closed, không bỏ qua im lặng).
     """
-    gaps: list[str] = []
     run_rows_raw = run.get("rows")
     ref_rows_raw = reference.get("rows")
     if not isinstance(run_rows_raw, list) or not isinstance(ref_rows_raw, list):
@@ -373,46 +442,57 @@ def compare_reports(run: dict[str, object], reference: dict[str, object]) -> lis
         if row is not None and row["source"] == BPIC_TEST_SPLIT_SOURCE
     }
     ref_map = {_row_key(row): row for row in ref_rows if row is not None}
-    for key in sorted(set(run_bpic) - set(ref_map)):
-        gaps.append(f"hàng thừa so với tham chiếu: {key}")
-    for key in sorted(set(ref_map) - set(run_bpic)):
-        gaps.append(f"hàng thiếu so với tham chiếu: {key}")
-    for key in sorted(set(run_bpic) & set(ref_map)):
-        left = run_bpic[key]
-        right = ref_map[key]
-        for diff in _metrics_equal(
-            cast(dict[str, dict[str, float]], left["metrics"]),
-            cast(dict[str, dict[str, float]], right["metrics"]),
-        ):
-            gaps.append(f"{key}: {diff}")
-    ref_meta = _reference_metadata(reference)
-    run_meta = _reference_metadata(run)
-    if ref_meta is None:
-        gaps.append("tham chiếu 12.2 thiếu metadata (code_commit/config_hash/...)")
-    elif run_meta is None:
-        gaps.append("báo cáo lần chạy thiếu metadata (code_commit/config_hash/...)")
-    else:
-        record = RunRow(
-            tenant_id="",
-            seed=ref_meta["seed"],
-            model_id=ref_meta["model_id"],
-            model_revision=ref_meta["model_revision"],
-            code_commit=ref_meta["code_commit"],
-            config_hash=ref_meta["config_hash"],
-            data_hash=ref_meta["data_hash"],
+    gaps = _compare_row_maps(
+        run_bpic,
+        ref_map,
+        "hàng thừa so với tham chiếu",
+        "hàng thiếu so với tham chiếu",
+    )
+    gaps.extend(
+        _metadata_gaps(
+            run,
+            reference,
+            "báo cáo lần chạy thiếu metadata (code_commit/config_hash/...)",
+            "tham chiếu 12.2 thiếu metadata (code_commit/config_hash/...)",
         )
-        gaps.extend(
-            reproducibility_gaps(
-                record,
-                seed=run_meta["seed"],
-                model_id=run_meta["model_id"],
-                model_revision=run_meta["model_revision"],
-                code_commit=run_meta["code_commit"],
-                config_hash=run_meta["config_hash"],
-                data_hash=run_meta["data_hash"],
-                cache_intact=bool(run.get("cache_intact", True)),
-            )
+    )
+    return gaps
+
+
+def compare_runs(first: dict[str, object], second: dict[str, object]) -> list[str]:
+    """So hai báo cáo của hai lần chạy (job CI `--compare`); rỗng = trùng.
+
+    Khác `compare_reports`: so TOÀN BỘ hàng cả hai phía (bộ chuẩn + BPIC)
+    vì hai lần chạy cùng commit/cấu hình/dữ liệu phải cho cùng số. Dùng
+    cho bước "so hai lần chạy" của job clean-machine; KHÔNG dùng cho bước
+    8 (so với JSON đã ghi của 12.2) vì tham chiếu 12.2 chỉ có hàng BPIC.
+    """
+    first_rows_raw = first.get("rows")
+    second_rows_raw = second.get("rows")
+    if not isinstance(first_rows_raw, list) or not isinstance(second_rows_raw, list):
+        return ["thiếu danh sách hàng (rows) ở báo cáo hoặc tham chiếu"]
+    first_rows = [normalize_row(row) for row in first_rows_raw]
+    second_rows = [normalize_row(row) for row in second_rows_raw]
+    if any(row is None for row in first_rows):
+        return ["một hàng của báo cáo thứ nhất sai schema"]
+    if any(row is None for row in second_rows):
+        return ["một hàng của báo cáo thứ hai sai schema"]
+    first_map = {_row_key(row): row for row in first_rows if row is not None}
+    second_map = {_row_key(row): row for row in second_rows if row is not None}
+    gaps = _compare_row_maps(
+        first_map,
+        second_map,
+        "hàng chỉ có ở lần chạy thứ nhất",
+        "hàng chỉ có ở lần chạy thứ hai",
+    )
+    gaps.extend(
+        _metadata_gaps(
+            first,
+            second,
+            "báo cáo thứ nhất thiếu metadata (code_commit/config_hash/...)",
+            "báo cáo thứ hai thiếu metadata (code_commit/config_hash/...)",
         )
+    )
     return gaps
 
 
@@ -859,7 +939,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs=2,
         type=Path,
         metavar=("A", "B"),
-        help="so hai báo cáo JSON (A lần chạy, B tham chiếu): 0 trùng, 4 lệch",
+        help="so hai báo cáo JSON của hai lần chạy (A lần 1, B lần 2): 0 trùng, 4 lệch",
     )
     args = parser.parse_args(argv)
     if args.compare is not None:
@@ -868,7 +948,7 @@ def main(argv: list[str] | None = None) -> int:
         if first is None or second is None:
             print("lỗi dữ liệu: không đọc được một trong hai báo cáo", file=sys.stderr)
             return 2
-        gaps = compare_reports(first, second)
+        gaps = compare_runs(first, second)
         if gaps:
             print("Hai báo cáo KHÔNG trùng:")
             for gap in gaps:

@@ -33,6 +33,7 @@ from praxon_core.eval.run_all import (
     _mock_bpic_rows,
     _read_lock_seed,
     compare_reports,
+    compare_runs,
     normalize_row,
 )
 
@@ -288,6 +289,106 @@ def test_compare_reports_hang_sai_schema():
     del bad["n_rules"]
     gaps = compare_reports(_report([bad]), _report([_nested_row()]))
     assert any("sai schema" in gap for gap in gaps)
+
+
+# ---------------------------------------------------------------- compare_runs
+
+
+def _synthetic_row(
+    tenant: str = "synthetic-1",
+    condition: str = "declare_only",
+    value: float = 0.7,
+    metrics: dict[str, dict[str, float]] | None = None,
+) -> dict[str, object]:
+    """Một hàng bộ chuẩn (source `generator`) để test phép so run-vs-run."""
+    return _nested_row(
+        tenant=tenant, condition=condition, source="generator", value=value, metrics=metrics
+    )
+
+
+def _two_run_reports() -> tuple[dict[str, object], dict[str, object]]:
+    """Hai báo cáo giống nhau tuyệt đối: 1 hàng BPIC + 2 hàng bộ chuẩn.
+
+    Mô phỏng hai lần smoke của job CI (run 42405359739: cả hai lần đều
+    tính đủ 35 hàng bộ chuẩn, giá trị giống nhau tuyệt đối).
+    """
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    return _report(rows), _report(rows)
+
+
+def test_compare_runs_hai_bao_cao_giong_nhau_thi_rong():
+    first, second = _two_run_reports()
+    assert compare_runs(first, second) == []
+
+
+def test_compare_runs_hang_bo_chuan_chi_co_o_lan_chay_thu_nhat():
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    first = _report(rows)
+    second = _report([_nested_row(), _synthetic_row(tenant="synthetic-2")])
+    gaps = compare_runs(first, second)
+    assert any("chỉ có ở lần chạy thứ nhất" in gap and "synthetic-1" in gap for gap in gaps)
+
+
+def test_compare_runs_hang_bo_chuan_chi_co_o_lan_chay_thu_hai():
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    first = _report([_nested_row(), _synthetic_row(tenant="synthetic-2")])
+    second = _report(rows)
+    gaps = compare_runs(first, second)
+    assert any("chỉ có ở lần chạy thứ hai" in gap and "synthetic-1" in gap for gap in gaps)
+
+
+def test_compare_runs_gia_tri_bo_chuan_lech():
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    first = _report(rows)
+    metrics = _metrics_dict(0.7)
+    metrics["precision"] = {"value": 0.71, "lower": 0.7 - 0.05, "upper": 0.7 + 0.05}
+    second_rows = [
+        _nested_row(),
+        _synthetic_row(metrics=metrics),
+        _synthetic_row(tenant="synthetic-2"),
+    ]
+    gaps = compare_runs(first, _report(second_rows))
+    assert len(gaps) == 1
+    assert "precision.value" in gaps[0]
+    assert "synthetic-1" in gaps[0]
+
+
+def test_compare_runs_hang_bpic_lech_van_so():
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    first = _report(rows)
+    metrics = _metrics_dict(0.7)
+    metrics["recall"] = {"value": 0.71, "lower": 0.7 - 0.05, "upper": 0.7 + 0.05}
+    second_rows = [
+        _nested_row(metrics=metrics),
+        _synthetic_row(),
+        _synthetic_row(tenant="synthetic-2"),
+    ]
+    gaps = compare_runs(first, _report(second_rows))
+    assert len(gaps) == 1
+    assert "recall.value" in gaps[0]
+
+
+def test_compare_runs_code_commit_lech():
+    rows = [_nested_row(), _synthetic_row(), _synthetic_row(tenant="synthetic-2")]
+    first = _report(rows, code_commit="aaa")
+    second = _report(rows, code_commit="bbb")
+    assert compare_runs(first, second) == ["code_commit"]
+
+
+def test_compare_runs_bao_cao_thu_hai_thieu_metadata():
+    first, second = _two_run_reports()
+    del second["code_commit"]
+    gaps = compare_runs(first, second)
+    assert any("thiếu metadata" in gap for gap in gaps)
+
+
+def test_compare_runs_hang_sai_schema_o_bao_cao_thu_hai():
+    first = _two_run_reports()[0]
+    bad = _synthetic_row()
+    del bad["n_rules"]
+    second_rows = [_nested_row(), bad, _synthetic_row(tenant="synthetic-2")]
+    gaps = compare_runs(first, _report(second_rows))
+    assert any("sai schema" in gap and "thứ hai" in gap for gap in gaps)
 
 
 # ---------------------------------------------------------------- mock driver
