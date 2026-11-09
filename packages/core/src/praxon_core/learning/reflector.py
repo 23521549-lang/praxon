@@ -53,6 +53,7 @@ from praxon_core.learning.declare_schema import (
     DECLARE_OUTPUT_SCHEMA,
     DeclareRule,
     ReflectorOutputError,
+    document_output_schema,
     parse_reflector_output,
 )
 from praxon_core.learning.generator import Trajectory
@@ -158,11 +159,17 @@ class Reflector:
         không có episode làm bằng chứng. Tài liệu rỗng thì trả kết quả
         rỗng, không gọi mô hình. Luật có trích dẫn nguồn không khớp đoạn
         thì bị bỏ trước khi thành Insight (lọc source-quote, 9.1) và
-        được đếm vào `source_quote_dropped`.
+        được đếm vào `source_quote_dropped`. Đường này dùng schema riêng
+        `document_output_schema()` (lần thử 5, 9.1): `activation`/`target`
+        chỉ 13 khái niệm Wabo — adapter gửi schema đó cho server để ép
+        giải mã và kiểm lại ở phía host.
         """
         if not document_text.strip():
             return ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
-        rules, tokens_in, tokens_out = self._call_model(_document_prompt(document_text, facts))
+        rules, tokens_in, tokens_out = self._call_model(
+            _document_prompt(document_text, facts),
+            json_schema=document_output_schema(),
+        )
         kept, dropped = _filter_rules_by_source_quote(rules, document_text)
         insights = _rules_to_insights(
             kept,
@@ -177,19 +184,23 @@ class Reflector:
             source_quote_dropped=dropped,
         )
 
-    def _call_model(self, prompt: str) -> tuple[list[DeclareRule], int, int]:
+    def _call_model(
+        self, prompt: str, *, json_schema: dict[str, Any] | None = None
+    ) -> tuple[list[DeclareRule], int, int]:
         """Một lần gọi mô hình cho một lô: thất bại thì cả lô thất bại.
 
         Adapter 6.1 đã thử lại lỗi tạm thời có giãn cách; hết lượt (hoặc
         phản hồi sai hợp đồng) thì nó báo `ModelCallError` — đổi thành
         `ReflectorBatchError` để bên gọi bắt một loại duy nhất. Đầu ra
         parse sai lược đồ cũng vậy (phòng thủ thêm, vì adapter đã kiểm
-        ở phía host).
+        ở phía host). `json_schema` không truyền thì dùng schema chung
+        của đường trace; đường tài liệu truyền schema riêng có enum.
         """
+        schema = json_schema if json_schema is not None else DECLARE_OUTPUT_SCHEMA
         try:
             result = self._model.complete(
                 prompt,
-                json_schema=DECLARE_OUTPUT_SCHEMA,
+                json_schema=schema,
                 temperature=self._temperature,
                 seed=self._seed,
                 max_tokens=self._max_tokens,
@@ -199,7 +210,7 @@ class Reflector:
                 f"lô Reflector thất bại: gọi mô hình hỏng: {exc}"
             ) from exc
         try:
-            rules = parse_reflector_output(result.text)
+            rules = parse_reflector_output(result.text, schema=schema)
         except ReflectorOutputError as exc:
             raise ReflectorBatchError(
                 f"lô Reflector thất bại: đầu ra không khớp lược đồ: {exc}"

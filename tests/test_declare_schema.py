@@ -292,3 +292,84 @@ def test_adapter_tu_choi_dieu_kien_thoi_gian():
     with pytest.raises(ModelCallError):
         model.complete("quyết trong 8 tuần", json_schema=DECLARE_OUTPUT_SCHEMA)
     assert len(server.calls) == 1
+
+
+# --- Schema riêng đường tài liệu: enum 13 khái niệm Wabo (lần thử 5, 9.1) ---
+
+TERMS_13 = [
+    "aanvraag",
+    "ontwerpbesluit",
+    "ter inzage",
+    "zienswijze",
+    "besluit",
+    "beschikking",
+    "bezwaar",
+    "beroep",
+    "voorlopige voorziening",
+    "verlengen",
+    "buiten behandeling",
+    "intrekken",
+    "bekendmaking",
+]
+
+
+def test_document_schema_enum_chi_13_khai_niem_wabo():
+    """Enum activation/target là đúng 13 `term` của bảng gắn (thứ tự bảng)."""
+    from praxon_core.learning.declare_schema import document_output_schema
+    from praxon_core.learning.dutch_mapping import default_dutch_mapping
+
+    schema = document_output_schema()
+    rule_schema = schema["properties"]["rules"]["items"]
+    terms = [entry.term for entry in default_dutch_mapping().concept]
+    assert terms == TERMS_13
+    assert rule_schema["properties"]["activation"] == {"type": "string", "enum": TERMS_13}
+    assert rule_schema["properties"]["target"] == {"type": "string", "enum": TERMS_13}
+
+
+def test_document_schema_khac_trace_chi_o_activation_target():
+    """Schema tài liệu khác schema trace chỉ ở activation/target."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    doc_rule = document_output_schema()["properties"]["rules"]["items"]
+    trace_rule = DECLARE_OUTPUT_SCHEMA["properties"]["rules"]["items"]
+    for key in ("template", "source", "condition"):
+        assert doc_rule["properties"][key] == trace_rule["properties"][key]
+    assert doc_rule["required"] == trace_rule["required"]
+    assert doc_rule["additionalProperties"] == trace_rule["additionalProperties"]
+
+
+@pytest.mark.parametrize(
+    "field", ["omgevingsvergunning", "2.15", "bevoegd gezag", "01_HOOFD_010", "A"]
+)
+def test_document_schema_tu_choi_tu_ngoai_bang(field):
+    """Từ ngoài bảng (từ văn bản, số điều, tên tác nhân, mã log) bị chặn."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    schema = document_output_schema()
+    with pytest.raises(ReflectorOutputError):
+        parse_reflector_output(json.dumps({"rules": [_rule(activation=field)]}), schema=schema)
+    with pytest.raises(ReflectorOutputError):
+        parse_reflector_output(json.dumps({"rules": [_rule(target=field)]}), schema=schema)
+
+
+@pytest.mark.parametrize("term", TERMS_13)
+def test_document_schema_nhan_ca_13_khai_niem(term):
+    """Cả 13 khái niệm đều parse được ở cả hai vị trí."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    schema = document_output_schema()
+    rules = parse_reflector_output(
+        json.dumps({"rules": [_rule(activation=term, target=term)]}), schema=schema
+    )
+    assert rules[0].activation == term
+    assert rules[0].target == term
+
+
+def test_document_schema_json_serializable_on_dinh():
+    """Schema tài liệu serialize xác định và khác schema trace."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    first = json.dumps(document_output_schema(), sort_keys=True)
+    second = json.dumps(document_output_schema(), sort_keys=True)
+    assert first == second
+    assert first != json.dumps(DECLARE_OUTPUT_SCHEMA, sort_keys=True)

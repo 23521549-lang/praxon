@@ -46,6 +46,7 @@ from praxon_core.learning.declare_schema import (
     DECLARE_OUTPUT_SCHEMA,
     DeclareRule,
     ReflectorOutputError,
+    document_output_schema,
 )
 from praxon_core.learning.generator import EpisodeRow, Trajectory
 from praxon_core.learning.measures import Measures
@@ -286,7 +287,7 @@ def test_reflect_document_khong_truyen_max_tokens():
     # dài phải sinh tới hết; cắt giữa chừng làm JSON dở dang, parse hỏng.
     # Chứng minh ở thân yêu cầu thật gửi tới server giả: không có khóa
     # `max_tokens` (adapter chỉ đưa khóa này khi khác None).
-    rule = _rule()
+    rule = _rule(activation="aanvraag", target="besluit")
     rule["source"] = "De aanvrager dient een aanvraag in"
     canned = _rules_text(rule)
     model, server = _model([canned])
@@ -301,7 +302,7 @@ def test_reflect_document_truyen_max_tokens_khi_dat():
     # Lưới an toàn 9.1: Reflector(max_tokens=2000) đưa đúng khóa `max_tokens`
     # vào thân yêu cầu thật gửi tới server giả; adapter chỉ đưa khóa này
     # khi khác None (đường mặc định đã có test hồi quy riêng ở trên).
-    rule = _rule()
+    rule = _rule(activation="aanvraag", target="besluit")
     rule["source"] = "De aanvrager dient een aanvraag in"
     canned = _rules_text(rule)
     model, server = _model([canned])
@@ -527,7 +528,7 @@ def test_dau_ra_sai_luoc_do_danh_dau_ca_lo_that_bai():
 
 def test_reflect_document_tra_insight_global():
     """Tài liệu thành Insight: scope global, nguồn document, không episode bằng chứng."""
-    rule = _rule(template="precedence", activation="A", target="B")
+    rule = _rule(template="precedence", activation="aanvraag", target="besluit")
     rule["source"] = "Công bố dự thảo"
     canned = _rules_text(rule)
     model, server = _model([canned])
@@ -536,7 +537,7 @@ def test_reflect_document_tra_insight_global():
     assert len(server.calls) == 1
     assert len(result.insights) == 1
     insight = result.insights[0]
-    assert insight.canonical_key == "precedence(A, B)"
+    assert insight.canonical_key == "precedence(aanvraag, besluit)"
     assert insight.source is InsightSource.DOCUMENT
     assert insight.scope == "global"
     assert insight.evidence_episode_ids == []
@@ -936,7 +937,7 @@ def test_reflect_document_loc_trich_dan_nguon_khong_khop():
 
 def test_reflect_document_trich_dan_rong_loi_luoc_do():
     """Trích dẫn rỗng thì cả lô sai lược đồ (schema bắt minLength 1)."""
-    rong = _rule()
+    rong = _rule(activation="aanvraag", target="besluit")
     rong["source"] = ""
     model = _StubModel(_rules_text(rong))
     reflector = Reflector(model)
@@ -957,3 +958,46 @@ def test_trace_batch_prompt_khong_doi_khi_sua_prompt_tai_lieu():
         "Fact hiện hành (đừng đề xuất lại):\n"
         "Chưa có fact nào."
     )
+
+
+# --- Schema enum đường tài liệu (lần thử 5, 9.1) ---
+
+
+def test_reflect_document_gui_schema_enum_cho_adapter():
+    """Đường tài liệu truyền schema enum (13 khái niệm) làm response_format."""
+    doc = "De aanvraag wordt ingediend. Het besluit volgt."
+    rule = _rule(activation="aanvraag", target="besluit")
+    rule["source"] = "De aanvraag wordt ingediend."
+    model, server = _model([_rules_text(rule)])
+    reflector = Reflector(model)
+    result = reflector.reflect_document(doc, [])
+    body = json.loads(server.calls[0].content.decode("utf-8"))
+    assert body["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response", "schema": document_output_schema()},
+    }
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(aanvraag, besluit)"
+    ]
+
+
+def test_reflect_document_tu_choi_activation_ngoai_enum():
+    """Từ ngoài bảng ở đường tài liệu → cả lô thất bại (parse theo schema enum)."""
+    doc = "De omgevingsvergunning wordt verleend."
+    rule = _rule(activation="omgevingsvergunning", target="besluit")
+    rule["source"] = "De omgevingsvergunning wordt verleend."
+    model = _StubModel(_rules_text(rule))
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect_document(doc, [])
+
+
+def test_reflect_trace_van_nhan_ma_log():
+    """Hồi quy: đường trace vẫn nhận mã log (schema trace không có enum)."""
+    rule = _rule(activation="01_HOOFD_010", target="01_HOOFD_490_1")
+    model, _server = _model([_rules_text(rule)])
+    reflector = Reflector(model)
+    result = reflector.reflect([_trajectory("c1", ["01_HOOFD_010", "01_HOOFD_490_1"])], [])
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(01_HOOFD_010, 01_HOOFD_490_1)"
+    ]

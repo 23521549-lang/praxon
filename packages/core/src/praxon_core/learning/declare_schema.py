@@ -37,16 +37,28 @@ câu) trong đoạn mà luật đó lấy từ đó, là lần thử 2 chống l
 (9.1, 2026-11-09). Schema bắt buộc trường này (`minLength: 1`) nên mô
 hình thiếu trích dẫn thì cả lô sai lược đồ; đường tài liệu còn lọc cơ
 học sau parse, bỏ luật có trích dẫn không khớp đoạn (xem Reflector).
+
+Đường tài liệu có schema riêng (`document_output_schema`, lần thử 5,
+9.1, 2026-11-09): `activation`/`target` là enum 13 khái niệm Wabo
+(`term` của bảng gắn, không phải tên hoạt động log) — llama-server
+chuyển schema thành GBNF và ép giải mã, nên mô hình không thể sinh từ
+ngoài bảng (`omgevingsvergunning`, `2.15`, `bevoegd gezag`) ở hai vị
+trí này. Đường trace giữ nguyên `DECLARE_OUTPUT_SCHEMA` (mã log tự do).
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from typing import Any
 
 import jsonschema
 
+from praxon_core.learning.dutch_mapping import (
+    DutchMappingTable,
+    default_dutch_mapping,
+)
 from praxon_core.learning.payload import canonical_key_for
 
 __all__ = [
@@ -57,6 +69,8 @@ __all__ = [
     "Condition",
     "DeclareRule",
     "ReflectorOutputError",
+    "document_output_schema",
+    "document_rule_schema",
     "parse_reflector_output",
     "validate_reflector_output",
 ]
@@ -102,6 +116,41 @@ DECLARE_OUTPUT_SCHEMA: dict[str, Any] = {
     "required": ["rules"],
     "additionalProperties": False,
 }
+
+
+def document_rule_schema(mapping: DutchMappingTable) -> dict[str, Any]:
+    """Trả schema một luật cho đường tài liệu: chỉ 13 khái niệm Wabo.
+
+    Giống `DECLARE_RULE_SCHEMA` nhưng `activation`/`target` là enum các
+    `term` của bảng gắn (lần thử 5 chống liệt kê, 9.1, 2026-11-09) —
+    llama-server chuyển schema thành GBNF và ép giải mã nên mô hình
+    không thể sinh từ ngoài bảng ở hai vị trí này. Enum là `term`
+    (khái niệm Wabo), KHÔNG phải `dutch_name` của hoạt động log: mô hình
+    viết khái niệm, `resolve_activity` gắn khái niệm đó sang mã canonical.
+    """
+    schema = copy.deepcopy(DECLARE_RULE_SCHEMA)
+    terms = [entry.term for entry in mapping.concept]
+    schema["properties"]["activation"] = {"type": "string", "enum": terms}
+    schema["properties"]["target"] = {"type": "string", "enum": terms}
+    return schema
+
+
+def document_output_schema(
+    mapping: DutchMappingTable | None = None,
+) -> dict[str, Any]:
+    """Trả schema đầu ra cho đường tài liệu: luật theo `document_rule_schema`.
+
+    `mapping` không truyền thì dùng bảng gắn mặc định (tệp TOML cạnh
+    `dutch_mapping.py`). Mỗi lần gọi dựng dict mới — khóa đệm băm nội
+    dung nên dict mới với cùng nội dung cho cùng khóa.
+    """
+    table = mapping if mapping is not None else default_dutch_mapping()
+    return {
+        "type": "object",
+        "properties": {"rules": {"type": "array", "items": document_rule_schema(table)}},
+        "required": ["rules"],
+        "additionalProperties": False,
+    }
 
 
 class ReflectorOutputError(ValueError):
@@ -162,27 +211,35 @@ class DeclareRule:
         )
 
 
-def validate_reflector_output(obj: object) -> None:
+def validate_reflector_output(obj: object, *, schema: dict[str, Any] | None = None) -> None:
     """Kiểm một object đã parse có khớp schema đầu ra của Reflector không.
 
     Sai thì `jsonschema.ValidationError` — bên gọi đổi thành
-    `ReflectorOutputError` nếu muốn một loại lỗi duy nhất.
+    `ReflectorOutputError` nếu muốn một loại lỗi duy nhất. `schema`
+    không truyền thì dùng schema chung của đường trace; đường tài liệu
+    truyền `document_output_schema()`.
     """
-    jsonschema.validate(instance=obj, schema=DECLARE_OUTPUT_SCHEMA)
+    jsonschema.validate(
+        instance=obj, schema=schema if schema is not None else DECLARE_OUTPUT_SCHEMA
+    )
 
 
-def parse_reflector_output(text: str) -> list[DeclareRule]:
+def parse_reflector_output(
+    text: str, *, schema: dict[str, Any] | None = None
+) -> list[DeclareRule]:
     """Parse text phản hồi của mô hình thành danh sách luật Declare.
 
-    Text phải là JSON khớp `DECLARE_OUTPUT_SCHEMA`; sai (không parse được
-    JSON, sai lược đồ) thì `ReflectorOutputError` — không trả luật nửa vời.
+    Text phải là JSON khớp schema đầu ra (`DECLARE_OUTPUT_SCHEMA` mặc
+    định; đường tài liệu truyền `document_output_schema()`); sai (không
+    parse được JSON, sai lược đồ) thì `ReflectorOutputError` — không trả
+    luật nửa vời.
     """
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ReflectorOutputError(f"đầu ra Reflector không parse được JSON: {exc}") from exc
     try:
-        validate_reflector_output(parsed)
+        validate_reflector_output(parsed, schema=schema)
     except jsonschema.ValidationError as exc:
         raise ReflectorOutputError(
             f"đầu ra Reflector không khớp JSON schema: {exc.message}"
