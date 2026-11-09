@@ -27,7 +27,7 @@ Kết quả đo (bộ chuẩn, hạt 42, 300 trace; 180 học / 60 hiệu chỉn
 đo; khám phá ra 20 luật, tất cả đều đúng so với đáp án 56 luật):
 - độ mạnh 2,0: 0 lên sai, 0 gỡ sai, 20/20 luật lên, lên ở trace hiệu
   chỉnh thứ 13 (trung vị), biên bất biến 0,2930.
-- độ mạnh 4,0 (mặc định): 0 lên sai, 0 gỡ sai, 20/20 luật lên, lên ở
+- độ mạnh 4,0 (mặc định lúc đo): 0 lên sai, 0 gỡ sai, 20/20 luật lên, lên ở
   trace hiệu chỉnh thứ 16 (trung vị), biên bất biến 0,1181.
 - độ mạnh 6,0: 0 lên sai, 0 gỡ sai, 20/20 luật lên, lên ở trace hiệu
   chỉnh thứ 20 (trung vị), biên bất biến 0,0324.
@@ -36,7 +36,7 @@ Kết quả đo (bộ chuẩn, hạt 42, 300 trace; 180 học / 60 hiệu chỉn
   nghiệm độ tin cao từ gói toàn cục.
 
 Hàm hiệu chỉnh CHỈ trả về kết quả, KHÔNG ghi lại tệp cấu hình chính
-sách (``default_rule_table.toml`` vẫn giữ độ mạnh mặc định 4,0): đổi
+sách (``default_rule_table.toml`` giữ độ mạnh mặc định 2,0 theo quyết định hiệu chỉnh 9.6): đổi
 mặc định là quyết định chính sách, phải duyệt riêng. Phần tối thiểu 30
 case (``min_matching_cases``) là điều kiện của Governor cho luật có
 điều kiện thuộc tính (quy tắc 7), không phải tham số cổng Beta; bộ
