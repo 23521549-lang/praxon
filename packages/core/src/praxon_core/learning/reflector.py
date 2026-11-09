@@ -259,48 +259,54 @@ def _trace_batch_prompt(batch: Sequence[Trajectory], facts: Sequence[FactRead]) 
     return "\n".join(lines)
 
 
-#: Phiên bản prompt tài liệu (khối từ vựng v4 + ví dụ mẫu v5, xem
-#: `DOCUMENT_VOCAB_BLOCK` và `DOCUMENT_FEW_SHOT_EXAMPLES`).
-DOCUMENT_PROMPT_VERSION = "v5"
+#: Phiên bản prompt tài liệu (ghi chú luật + ví dụ mẫu v6, xem
+#: `DOCUMENT_RULES_NOTE` và `DOCUMENT_FEW_SHOT_EXAMPLES`).
+DOCUMENT_PROMPT_VERSION = "v6"
 
-#: Khối từ vựng v4 cho prompt tài liệu (lần thử 2 chống liệt kê, 9.1):
-#: khối v3 + câu trích dẫn nguồn — mỗi luật phải kèm trường `source` là
-#: một trích dẫn nguyên văn trong đoạn. Khối v3 = khối v2 + câu giới hạn
-#: "Tối đa 15 luật." (thí nghiệm cổng kiểm đoạn 7 chứng minh câu này chặn
-#: được sinh vô hạn: đối chứng v2 chạy vô hạn tới n_gen 2.626, biến thể
-#: cap trả đúng 15 luật và dừng gọn; số 15 lấy theo mức cao nhất từng
-#: thấy 13 luật/đoạn + headroom 2). Câu trích dẫn nguồn thêm vào vì thí
-#: nghiệm neo lần 1 thất bại: đoạn 0 trả y hệt bộ liệt kê v2, đoạn 12
-#: còn 1 luật riêng, J(7,12) = 0,3333.
-DOCUMENT_VOCAB_BLOCK = (
-    "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
-    "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
-    "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
-    "verlengen, buiten behandeling, intrekken, bekendmaking. Không dùng số "
-    "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
-    "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
-    "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật. Mỗi luật phải kèm "
-    "trường source là một trích dẫn nguyên văn (một câu hoặc một phần câu) "
-    "trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
+#: Ghi chú luật cho prompt tài liệu v6 (lần thử 4 chống liệt kê, 9.1):
+#: chỉ giữ cap 15 luật + câu trích dẫn nguồn từ khối v4; khối từ vựng
+#: 13 khái niệm đã bỏ vì mô hình liệt kê nó thay vì đọc văn bản (lần 1-3
+#: đều thất bại khi khối còn trong prompt; lần trích v1 không khối thì
+#: không liệt kê). Không còn danh sách khái niệm để liệt kê; ví dụ mẫu
+#: dưới đây là hướng dẫn từ vựng duy nhất.
+DOCUMENT_RULES_NOTE = (
+    "Tối đa 15 luật. Mỗi luật phải kèm trường source là một trích dẫn "
+    "nguyên văn (một câu hoặc một phần câu) trong đoạn mà luật đó lấy từ "
+    "đó, không bịa trích dẫn."
 )
 
 
-#: Ví dụ mẫu few-shot cho prompt tài liệu v5 (lần thử 3 chống liệt kê, 9.1):
-#: 2 luật thật trích từ đoạn 3 (không nằm trong tập thí nghiệm 0/7/12),
-#: mỗi ví dụ gồm template/activation/target/source đầy đủ. Cả hai lấy từ
-#: cùng một câu: đoạn 3 chỉ có đúng một câu chứa khái niệm trong 13 khái
-#: niệm (ministerieel besluit, dat in de Staatscourant wordt bekendgemaakt).
-#: Câu mở đầu nói rõ ví dụ chỉ để tham khảo cách trích, không dùng lại.
+#: Ví dụ mẫu few-shot cho prompt tài liệu v6 (lần thử 4 chống liệt kê, 9.1):
+#: 4 luật thật trích từ 3 đoạn khác nhau (30, 31, 45; không nằm trong tập
+#: thí nghiệm 0/7/12), phủ 6 khái niệm: ontwerpbesluit, ter inzage, beroep,
+#: voorlopige voorziening, beschikking, bekendmaking. Mỗi ví dụ gồm
+#: template/activation/target/source đầy đủ; trích dẫn nguyên văn trong
+#: đoạn nguồn (đã kiểm bằng bộ lọc thật + `resolve_activity`). Câu mở đầu
+#: nói rõ ví dụ chỉ để tham khảo cách trích, không dùng lại.
 DOCUMENT_FEW_SHOT_EXAMPLES = (
     "Ví dụ mẫu (trích đúng từ một đoạn khác, chỉ để tham khảo cách trích, "
     "không dùng lại các luật này):\n"
-    '{"template": "precedence", "activation": "besluit", "target": '
-    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
-    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}\n'
-    '{"template": "response", "activation": "besluit", "target": '
-    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
-    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}'
+    '{"template": "response", "activation": "ontwerpbesluit", "target": '
+    '"ter inzage", "source": "In gevallen waarin een ander bestuursorgaan '
+    "dan burgemeester en wethouders bevoegd gezag is, ligt het "
+    "ontwerpbesluit, met de daarop betrekking hebbende stukken die "
+    "redelijkerwijs nodig zijn voor een beoordeling van het ontwerpbesluit, "
+    "tevens ter inzage in de gemeente waar het betrokken project in "
+    'hoofdzaak zal worden of wordt uitgevoerd."}\n'
+    '{"template": "precedence", "activation": "ter inzage", "target": '
+    '"beroep", "source": "De termijn voor indiening van een beroepschrift '
+    "tegen het besluit houdende de aanwijzing vangt aan met ingang van de "
+    'dag na die waarop dit besluit ter inzage is gelegd."}\n'
+    '{"template": "precedence", "activation": "voorlopige voorziening", '
+    '"target": "beschikking", "source": "Indien in gevallen als bedoeld in '
+    "het tweede lid, gedurende de daar bedoelde termijn bij de bevoegde "
+    "rechter een verzoek om voorlopige voorziening is gedaan, treedt de "
+    'beschikking niet in werking voordat op dat verzoek is beslist."}\n'
+    '{"template": "response", "activation": "beschikking", "target": '
+    '"bekendmaking", "source": "Indien toepassing is gegeven aan het eerste '
+    "tot en met derde lid, wordt de beschikking op de aanvraag "
+    "tegelijkertijd en op dezelfde wijze met het besluit, houdende de "
+    'aanwijzing, bekendgemaakt."}'
 )
 
 
@@ -310,7 +316,7 @@ def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
         [
             "Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.",
             "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ.",
-            DOCUMENT_VOCAB_BLOCK,
+            DOCUMENT_RULES_NOTE,
             DOCUMENT_FEW_SHOT_EXAMPLES,
             "",
             "Tài liệu:",

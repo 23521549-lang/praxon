@@ -52,7 +52,7 @@ from praxon_core.learning.measures import Measures
 from praxon_core.learning.reflector import (
     DOCUMENT_FEW_SHOT_EXAMPLES,
     DOCUMENT_PROMPT_VERSION,
-    DOCUMENT_VOCAB_BLOCK,
+    DOCUMENT_RULES_NOTE,
     Reflector,
     ReflectorBatchError,
     _document_prompt,
@@ -718,83 +718,126 @@ def test_loi_vinh_vien_khong_thu_lai():
     assert isinstance(excinfo.value.__cause__, ModelCallError)
 
 
-# --- Prompt tài liệu v5 (few-shot, lần thử 3 chống liệt kê 9.1) ---
+# --- Prompt tài liệu v6 (bỏ khối từ vựng + ví dụ đa dạng, lần thử 4 chống liệt kê 9.1) ---
 
-#: Khối từ vựng v4 nguyên văn: khối v3 + câu trích dẫn nguồn ở cuối.
-VOCAB_BLOCK_V4 = (
-    "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
-    "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
-    "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
-    "verlengen, buiten behandeling, intrekken, bekendmaking. Không dùng số "
-    "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
-    "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
-    "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật. Mỗi luật phải kèm "
-    "trường source là một trích dẫn nguyên văn (một câu hoặc một phần câu) "
-    "trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
+#: Ghi chú luật v6 nguyên văn: cap 15 luật + câu trích dẫn nguồn.
+RULES_NOTE_V6 = (
+    "Tối đa 15 luật. Mỗi luật phải kèm trường source là một trích dẫn "
+    "nguyên văn (một câu hoặc một phần câu) trong đoạn mà luật đó lấy từ "
+    "đó, không bịa trích dẫn."
 )
 
-#: Ví dụ mẫu v5 nguyên văn: câu mở đầu + 2 luật thật trích từ đoạn 3.
-FEW_SHOT_V5 = (
+#: Ví dụ mẫu v6 nguyên văn: câu mở đầu + 4 luật thật trích từ đoạn 30/31/45.
+FEW_SHOT_V6 = (
     "Ví dụ mẫu (trích đúng từ một đoạn khác, chỉ để tham khảo cách trích, "
     "không dùng lại các luật này):\n"
-    '{"template": "precedence", "activation": "besluit", "target": '
-    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
-    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}\n'
-    '{"template": "response", "activation": "besluit", "target": '
-    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
-    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}'
+    '{"template": "response", "activation": "ontwerpbesluit", "target": '
+    '"ter inzage", "source": "In gevallen waarin een ander bestuursorgaan '
+    "dan burgemeester en wethouders bevoegd gezag is, ligt het "
+    "ontwerpbesluit, met de daarop betrekking hebbende stukken die "
+    "redelijkerwijs nodig zijn voor een beoordeling van het ontwerpbesluit, "
+    "tevens ter inzage in de gemeente waar het betrokken project in "
+    'hoofdzaak zal worden of wordt uitgevoerd."}\n'
+    '{"template": "precedence", "activation": "ter inzage", "target": '
+    '"beroep", "source": "De termijn voor indiening van een beroepschrift '
+    "tegen het besluit houdende de aanwijzing vangt aan met ingang van de "
+    'dag na die waarop dit besluit ter inzage is gelegd."}\n'
+    '{"template": "precedence", "activation": "voorlopige voorziening", '
+    '"target": "beschikking", "source": "Indien in gevallen als bedoeld in '
+    "het tweede lid, gedurende de daar bedoelde termijn bij de bevoegde "
+    "rechter een verzoek om voorlopige voorziening is gedaan, treedt de "
+    'beschikking niet in werking voordat op dat verzoek is beslist."}\n'
+    '{"template": "response", "activation": "beschikking", "target": '
+    '"bekendmaking", "source": "Indien toepassing is gegeven aan het eerste '
+    "tot en met derde lid, wordt de beschikking op de aanvraag "
+    "tegelijkertijd en op dezelfde wijze met het besluit, houdende de "
+    'aanwijzing, bekendgemaakt."}'
 )
 
-#: SHA-256 của prompt đoạn 7 thật với khối v5 (tính từ prompt repo sau khi
-#: sửa; đoạn 7 lấy qua pipeline thật như test v4 trước đây).
-PROMPT_SHA_DOAN_7_V5 = "b75fc5dd08226553aab924b9033f4a55a575064a79d13b5be163bcb91ae70945"
+#: Chuỗi danh sách 13 khái niệm của khối v4: phải KHÔNG còn trong prompt v6.
+VOCAB_LIST_V4 = (
+    "aanvraag, ontwerpbesluit, ter inzage, zienswijze, besluit, beschikking, "
+    "bezwaar, beroep, voorlopige voorziening, verlengen, buiten behandeling, "
+    "intrekken, bekendmaking"
+)
+
+#: SHA-256 của prompt đoạn 7 thật với khối v6 (tính từ prompt repo sau khi
+#: sửa; đoạn 7 lấy qua pipeline thật như test v4/v5 trước đây).
+PROMPT_SHA_DOAN_7_V6 = "ed46775a0ac6ce879ee2f7b42971f09d69eaa22c546d2cfc40a3024826872e3d"
 
 
-def test_document_prompt_chua_khoi_tu_vung_v5_nguyen_van():
-    """Prompt tài liệu chứa đúng khối v4 + ví dụ mẫu v5, đúng vị trí."""
-    assert DOCUMENT_PROMPT_VERSION == "v5"
-    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V4
-    assert DOCUMENT_FEW_SHOT_EXAMPLES == FEW_SHOT_V5
+def test_document_prompt_chua_ghi_chu_v6_nguyen_van():
+    """Prompt tài liệu chứa đúng ghi chú v6 + ví dụ mẫu v6, không còn khối từ vựng."""
+    assert DOCUMENT_PROMPT_VERSION == "v6"
+    assert DOCUMENT_RULES_NOTE == RULES_NOTE_V6
+    assert DOCUMENT_FEW_SHOT_EXAMPLES == FEW_SHOT_V6
     prompt = _document_prompt("Văn bản mẫu.", ())
-    assert prompt.count(VOCAB_BLOCK_V4) == 1
-    assert prompt.count(FEW_SHOT_V5) == 1
+    assert VOCAB_LIST_V4 not in prompt
+    assert prompt.count(RULES_NOTE_V6) == 1
+    assert prompt.count(FEW_SHOT_V6) == 1
     lines = prompt.split("\n")
     assert lines[0] == ("Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.")
     assert lines[1] == (
         "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ."
     )
-    assert lines[2] == VOCAB_BLOCK_V4
-    assert "\n".join(lines[3:6]) == FEW_SHOT_V5
-    assert lines[6] == ""
-    assert lines[7] == "Tài liệu:"
-    assert lines[8] == "Văn bản mẫu."
+    assert lines[2] == RULES_NOTE_V6
+    assert "\n".join(lines[3:8]) == FEW_SHOT_V6
+    assert lines[8] == ""
+    assert lines[9] == "Tài liệu:"
+    assert lines[10] == "Văn bản mẫu."
     assert "01_HOOFD" not in prompt
     assert "10_UOV" not in prompt
 
 
-def test_few_shot_vi_du_dung_dinh_dang_json():
-    """Ví dụ mẫu v5: đúng 2 dòng JSON, đúng luật đã chốt (besluit/bekendmaking)."""
+def test_few_shot_v6_vi_du_dung_dinh_dang_json():
+    """Ví dụ mẫu v6: đúng 4 dòng JSON, đúng luật đã chốt (4 cặp khác nhau)."""
     parts = DOCUMENT_FEW_SHOT_EXAMPLES.split("\n")
-    assert len(parts) == 3
+    assert len(parts) == 5
     assert parts[0].startswith("Ví dụ mẫu (trích đúng từ một đoạn khác, ")
     expected = [
         {
-            "template": "precedence",
-            "activation": "besluit",
-            "target": "bekendmaking",
+            "template": "response",
+            "activation": "ontwerpbesluit",
+            "target": "ter inzage",
             "source": (
-                "tenzij bij ministerieel besluit, dat in de Staatscourant "
-                "wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."
+                "In gevallen waarin een ander bestuursorgaan dan burgemeester "
+                "en wethouders bevoegd gezag is, ligt het ontwerpbesluit, met "
+                "de daarop betrekking hebbende stukken die redelijkerwijs nodig "
+                "zijn voor een beoordeling van het ontwerpbesluit, tevens ter "
+                "inzage in de gemeente waar het betrokken project in hoofdzaak "
+                "zal worden of wordt uitgevoerd."
+            ),
+        },
+        {
+            "template": "precedence",
+            "activation": "ter inzage",
+            "target": "beroep",
+            "source": (
+                "De termijn voor indiening van een beroepschrift tegen het "
+                "besluit houdende de aanwijzing vangt aan met ingang van de dag "
+                "na die waarop dit besluit ter inzage is gelegd."
+            ),
+        },
+        {
+            "template": "precedence",
+            "activation": "voorlopige voorziening",
+            "target": "beschikking",
+            "source": (
+                "Indien in gevallen als bedoeld in het tweede lid, gedurende "
+                "de daar bedoelde termijn bij de bevoegde rechter een verzoek "
+                "om voorlopige voorziening is gedaan, treedt de beschikking "
+                "niet in werking voordat op dat verzoek is beslist."
             ),
         },
         {
             "template": "response",
-            "activation": "besluit",
+            "activation": "beschikking",
             "target": "bekendmaking",
             "source": (
-                "tenzij bij ministerieel besluit, dat in de Staatscourant "
-                "wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."
+                "Indien toepassing is gegeven aan het eerste tot en met derde "
+                "lid, wordt de beschikking op de aanvraag tegelijkertijd en op "
+                "dezelfde wijze met het besluit, houdende de aanwijzing, "
+                "bekendgemaakt."
             ),
         },
     ]
@@ -804,8 +847,8 @@ def test_few_shot_vi_du_dung_dinh_dang_json():
         assert set(got) == {"template", "activation", "target", "source"}
 
 
-def test_few_shot_vi_du_khop_doan_3():
-    """Ví dụ mẫu v5 khớp đoạn 3 thật: trích dẫn nguyên văn + khái niệm gắn được."""
+def test_few_shot_v6_vi_du_khop_doan_nguon():
+    """Ví dụ mẫu v6 khớp đoạn nguồn thật: trích dẫn nguyên văn + khái niệm gắn được."""
     from praxon_core.learning.dutch_mapping import default_dutch_mapping
     from praxon_core.learning.reflector import _normalize_source_quote
     from praxon_core.learning.wabo_rules import (
@@ -821,18 +864,18 @@ def test_few_shot_vi_du_khop_doan_3():
     doc = load_wabo_document(cache, mapping=mapping)
     chunks = split_wabo_text(doc.text)
     assert len(chunks) == 52
-    chunk3 = _normalize_source_quote(chunks[3])
     parts = DOCUMENT_FEW_SHOT_EXAMPLES.split("\n")
-    assert len(parts) == 3
-    for line in parts[1:]:
+    assert len(parts) == 5
+    for chunk_index, line in zip([30, 31, 45, 31], parts[1:], strict=True):
         rule = json.loads(line)
-        assert _normalize_source_quote(rule["source"]) in chunk3
+        chunk = _normalize_source_quote(chunks[chunk_index])
+        assert _normalize_source_quote(rule["source"]) in chunk
         assert resolve_activity(rule["activation"], mapping) is not None
         assert resolve_activity(rule["target"], mapping) is not None
 
 
-def test_document_prompt_doan_7_khop_sha_v5():
-    """Prompt đoạn 7 thật khớp SHA với khối v5."""
+def test_document_prompt_doan_7_khop_sha_v6():
+    """Prompt đoạn 7 thật khớp SHA với khối v6."""
     from praxon_core.learning.wabo_rules import (
         extract_wabo_text,
         split_wabo_text,
@@ -843,7 +886,7 @@ def test_document_prompt_doan_7_khop_sha_v5():
         pytest.skip("chưa tải văn bản Wabo về cache")
     chunks = split_wabo_text(extract_wabo_text(cache.read_text(encoding="utf-8")))
     prompt = _document_prompt(chunks[7], ())
-    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V5
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V6
 
 
 def test_loc_trich_dan_nguon_khop_bua_rong():
