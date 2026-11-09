@@ -51,13 +51,16 @@ from praxon_core.learning.declare_schema import (
 from praxon_core.learning.generator import EpisodeRow, Trajectory
 from praxon_core.learning.measures import Measures
 from praxon_core.learning.reflector import (
+    DOCUMENT_EXCLUSION_INTRO,
     DOCUMENT_FEW_SHOT_EXAMPLES,
+    DOCUMENT_ONE_RULE_NOTE,
     DOCUMENT_PROMPT_VERSION,
     DOCUMENT_RULES_NOTE,
     Reflector,
     ReflectorBatchError,
     _document_prompt,
     _filter_rules_by_source_quote,
+    _one_rule_key,
     _trace_batch_prompt,
     reflector_from_settings,
 )
@@ -1001,3 +1004,180 @@ def test_reflect_trace_van_nhan_ma_log():
     assert [insight.canonical_key for insight in result.insights] == [
         "response(01_HOOFD_010, 01_HOOFD_490_1)"
     ]
+
+
+# --- Chế độ một luật đường tài liệu (lần thử 6 chống liệt kê, 9.1) ---
+
+
+class _StubModelSequence:
+    """LanguageModel giả trả text khác nhau mỗi lần gọi, ghi lại từng lần gọi.
+
+    Dùng cho chế độ một luật: mỗi lần gọi là một bước lặp với prompt khác
+    nhau (danh sách loại trừ dài dần). Hết danh sách thì lặp lại text cuối.
+    """
+
+    def __init__(self, texts: Sequence[str]) -> None:
+        self._texts = list(texts)
+        self.calls: list[dict[str, Any]] = []
+
+    def complete(
+        self,
+        prompt: str,
+        *,
+        json_schema: Mapping[str, Any] | None = None,
+        temperature: float = 0.0,
+        seed: int | None = None,
+        max_tokens: int | None = None,
+    ) -> CompletionResult:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "json_schema": json_schema,
+                "temperature": temperature,
+                "seed": seed,
+                "max_tokens": max_tokens,
+            }
+        )
+        index = min(len(self.calls) - 1, len(self._texts) - 1)
+        return CompletionResult(text=self._texts[index])
+
+
+def test_one_rule_key_dung_dinh_dang_template_activation_target():
+    """Khóa loại trừ: `template(activation, target)`, chữ thường, gọn khoảng trắng."""
+    rule = DeclareRule(
+        template="Response", activation=" Aanvraag ", target="Besluit", source="x"
+    )
+    assert _one_rule_key(rule) == "response(aanvraag, besluit)"
+
+
+def test_document_prompt_mot_luat_dung_ghi_chu_khong_con_cap_15():
+    """Prompt một luật: ghi chú một luật thay 'Tối đa 15 luật', vẫn có ví dụ mẫu."""
+    assert DOCUMENT_ONE_RULE_NOTE.startswith("Chỉ trả đúng 1 luật")
+    prompt = _document_prompt("Văn bản mẫu.", (), one_rule=True)
+    assert DOCUMENT_PROMPT_VERSION == "v6"
+    assert DOCUMENT_RULES_NOTE not in prompt
+    assert DOCUMENT_FEW_SHOT_EXAMPLES in prompt
+    lines = prompt.split("\n")
+    assert lines[2] == DOCUMENT_ONE_RULE_NOTE
+    assert "\n".join(lines[3:8]) == FEW_SHOT_V6
+    assert lines[8] == ""
+    assert lines[9] == "Tài liệu:"
+    assert lines[10] == "Văn bản mẫu."
+
+
+def test_document_prompt_mot_luat_loai_tru_hien_trong_prompt():
+    """Khối loại trừ: chỉ hiện khi có luật đã tìm, đúng dạng `template(a, b)`."""
+    prompt = _document_prompt("Văn bản mẫu.", (), one_rule=True)
+    assert DOCUMENT_EXCLUSION_INTRO not in prompt
+    prompt = _document_prompt(
+        "Văn bản mẫu.",
+        (),
+        one_rule=True,
+        excluded=["response(aanvraag, besluit)", "precedence(aanvraag, bezwaar)"],
+    )
+    lines = prompt.split("\n")
+    assert lines[8] == DOCUMENT_EXCLUSION_INTRO
+    assert lines[9] == "- response(aanvraag, besluit)"
+    assert lines[10] == "- precedence(aanvraag, bezwaar)"
+    assert lines[11] == ""
+    assert lines[12] == "Tài liệu:"
+
+
+def test_reflect_document_once_tra_mot_luat_va_cap_nhat_loai_tru():
+    """Một lần gọi chế độ một luật: 1 insight, loại trừ dài thêm, schema có maxItems=1."""
+    doc = "Artikel 2.5 De aanvraag wordt ingediend bij het bevoegd gezag."
+    rule = _rule(template="response", activation="aanvraag", target="besluit")
+    rule["source"] = "De aanvraag wordt ingediend bij het bevoegd gezag."
+    model = _StubModelSequence([_rules_text(rule)])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(doc, ())
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(aanvraag, besluit)"
+    ]
+    assert excluded == ("response(aanvraag, besluit)",)
+    assert len(model.calls) == 1
+    call = model.calls[0]
+    assert "Chỉ trả đúng 1 luật" in call["prompt"]
+    assert call["json_schema"] == document_output_schema(max_rules=1)
+    assert call["json_schema"]["properties"]["rules"]["maxItems"] == 1
+
+
+def test_reflect_document_once_gui_schema_max_items_cho_adapter():
+    """Một lần gọi gửi schema maxItems=1 làm response_format cho server."""
+    doc = "De aanvraag wordt ingediend. Het besluit volgt."
+    rule = _rule(activation="aanvraag", target="besluit")
+    rule["source"] = "De aanvraag wordt ingediend."
+    model, server = _model([_rules_text(rule)])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(doc, [])
+    body = json.loads(server.calls[0].content.decode("utf-8"))
+    assert body["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response", "schema": document_output_schema(max_rules=1)},
+    }
+    assert excluded == ("response(aanvraag, besluit)",)
+    assert len(result.insights) == 1
+
+
+def test_reflect_document_once_tra_rong_thi_loai_tru_khong_doi():
+    """Mô hình trả danh sách rỗng thì kết quả rỗng, danh sách loại trừ không đổi."""
+    model = _StubModelSequence([_rules_text()])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(
+        "Artikel 2.5 De aanvraag wordt ingediend.",
+        (),
+        excluded=("response(aanvraag, besluit)",),
+    )
+    assert result.insights == ()
+    assert excluded == ("response(aanvraag, besluit)",)
+
+
+def test_reflect_document_once_luat_bi_loc_trich_dan_van_vao_loai_tru():
+    """Luật bị lọc trích dẫn bỏ vẫn vào danh sách loại trừ — lần sau không lặp lại nó."""
+    doc = "Artikel 2.5 De aanvraag wordt ingediend bij het bevoegd gezag."
+    rule = _rule(template="response", activation="aanvraag", target="besluit")
+    rule["source"] = "Een câu hoàn toàn không có trong đoạn."
+    model = _StubModelSequence([_rules_text(rule)])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(doc, ())
+    assert result.insights == ()
+    assert result.source_quote_dropped == 1
+    assert excluded == ("response(aanvraag, besluit)",)
+
+
+def test_reflect_document_once_luat_lap_thi_loai_tru_khong_doi():
+    """Mô hình lặp luật đã có thì danh sách loại trừ không dài thêm (tín hiệu dừng)."""
+    doc = "Artikel 2.5 De aanvraag wordt ingediend bij het bevoegd gezag."
+    rule = _rule(template="response", activation="aanvraag", target="besluit")
+    rule["source"] = "De aanvraag wordt ingediend bij het bevoegd gezag."
+    model = _StubModelSequence([_rules_text(rule)])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(
+        doc, (), excluded=("response(aanvraag, besluit)",)
+    )
+    assert excluded == ("response(aanvraag, besluit)",)
+    # Luật lặp vẫn trả insight (bên gọi dừng vòng lặp, không cộng dồn nó).
+    assert len(result.insights) == 1
+
+
+def test_reflect_document_once_hai_luat_bi_chan_max_items():
+    """Mô hình trả 2 luật thì cả bước thất bại (schema maxItems=1 chặn ở parse)."""
+    doc = "Artikel 2.5 De aanvraag wordt ingediend."
+    first = _rule(activation="aanvraag", target="besluit")
+    second = _rule(activation="aanvraag", target="bezwaar")
+    model = _StubModelSequence([_rules_text(first, second)])
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect_document_once(doc, ())
+
+
+def test_reflect_document_once_tai_lieu_rong_khong_goi_mo_hinh():
+    """Tài liệu rỗng thì kết quả rỗng, danh sách loại trừ không đổi, không gọi mô hình."""
+    model = _StubModelSequence([_rules_text(_rule())])
+    reflector = Reflector(model)
+    result, excluded = reflector.reflect_document_once(
+        "   \n", (), excluded=("response(aanvraag, besluit)",)
+    )
+    assert result.insights == ()
+    assert excluded == ("response(aanvraag, besluit)",)
+    assert model.calls == []

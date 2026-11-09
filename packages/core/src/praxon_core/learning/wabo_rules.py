@@ -43,6 +43,16 @@ Quyết định thiết kế (ghi rõ để review):
   từng byte nên file JSONL cũ vẫn nối lại được. Dùng cho đoạn 50
   của Wabo (tách tại Artikel 8.3, lần đo 9.1 lần 4): model sinh
   không dừng trên đoạn nguyên vì schema `rules` không có `maxItems`.
+- Chế độ một luật (lần thử 6 chống liệt kê, 9.1, `--one-rule`): mỗi đoạn
+  hỏi đúng 1 luật một lần gọi (schema `maxItems = 1` + prompt một luật),
+  lặp tối đa 8 lần với danh sách loại trừ mọi luật mô hình đã trả cho
+  đoạn đó — kể cả luật bị lọc bỏ — nên prompt mỗi lần đều khác và tính
+  xác định giữ nguyên ở temperature 0 + seed cố định; dừng khi danh
+  sách loại trừ không dài thêm (mô hình trả rỗng hoặc lặp luật đã có).
+  Luật vòng tự thân (activation == target sau khi khớp khái niệm) bị bỏ
+  và đếm riêng: hai khái niệm khác nhau luôn khớp về hai mã khác nhau
+  (bảng gắn: 13 khái niệm -> 13 mã canonical distinct, đã kiểm thật
+  2026-11-09, có test giữ) nên so sánh theo mã đã khớp là chính xác.
 - Luật trùng (cùng luật từ nhiều đoạn) chỉ đếm một lần; `extracted`
   đếm insight DUY NHẤT, nên `extracted == chấp nhận + không gắn được
   + có điều kiện + cổng Beta loại`.
@@ -155,6 +165,7 @@ class WaboExtraction:
     facts: tuple[FactRow, ...]
     tokens_in: int
     tokens_out: int
+    self_loop_dropped: int = 0
 
     @property
     def accepted(self) -> int:
@@ -359,6 +370,7 @@ class _LoadedChunk:
     tokens_in: int
     tokens_out: int
     source_quote_dropped: int = 0
+    self_loop_dropped: int = 0
 
 
 def _write_chunk_line(
@@ -377,6 +389,7 @@ def _write_chunk_line(
         "tokens_in": result.tokens_in,
         "tokens_out": result.tokens_out,
         "source_quote_dropped": result.source_quote_dropped,
+        "self_loop_dropped": result.self_loop_dropped,
     }
     handle.write(json.dumps(line, ensure_ascii=False) + "\n")
     handle.flush()
@@ -416,6 +429,7 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             tokens_in = data["tokens_in"]
             tokens_out = data["tokens_out"]
             dropped = data.get("source_quote_dropped", 0)
+            self_loop_dropped = data.get("self_loop_dropped", 0)
             if type(index) is not int or index != expected:
                 raise ValueError(f"chunk_index {index!r} khác đoạn chờ {expected}")
             if index >= len(chunks):
@@ -432,6 +446,8 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
                 raise ValueError("tokens_in/tokens_out âm")
             if type(dropped) is not int or dropped < 0:
                 raise ValueError("source_quote_dropped không phải số nguyên không âm")
+            if type(self_loop_dropped) is not int or self_loop_dropped < 0:
+                raise ValueError("self_loop_dropped không phải số nguyên không âm")
             insights = tuple(Insight.model_validate(item) for item in raw_insights)
         except (KeyError, TypeError, ValueError) as exc:
             print(
@@ -444,8 +460,72 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             source_quote_dropped=dropped,
+            self_loop_dropped=self_loop_dropped,
         )
     return loaded
+
+
+def _is_self_loop_rule(insight: Insight, mapping: DutchMappingTable) -> bool:
+    """Luật vòng tự thân: activation và target khớp về cùng một mã.
+
+    Hai khái niệm khác nhau luôn khớp về hai mã khác nhau (bảng gắn:
+    13 khái niệm -> 13 mã canonical distinct, đã kiểm thật 2026-11-09,
+    có test giữ) nên so sánh theo mã đã khớp là chính xác; khái niệm
+    không gắn được thì không tính là vòng tự thân (nó bị đếm riêng ở
+    `unmapped`). Luật vòng tự thân là luật rỗng — mô hình sinh nó khi
+    cạn luật thật (lần thử 5, 9.1: `response(verlengen, verlengen)` x14).
+    """
+    first = resolve_activity(insight.activation, mapping)
+    second = resolve_activity(insight.target, mapping)
+    return first is not None and first == second
+
+
+def _extract_chunk_one_rule(
+    reflect_document_once: Callable[
+        [str, Sequence[FactRead], Sequence[str]],
+        tuple[ReflectorResult, tuple[str, ...]],
+    ],
+    chunk: str,
+    *,
+    max_calls: int,
+    mapping: DutchMappingTable,
+) -> ReflectorResult:
+    """Một đoạn bằng chế độ một luật: lặp tối đa `max_calls` lần gọi.
+
+    Mỗi lần gọi hỏi đúng 1 luật, danh sách loại trừ gồm mọi luật mô
+    hình đã trả cho đoạn này (kể cả luật bị lọc bỏ) nên prompt mỗi lần
+    đều khác — tính xác định giữ nguyên ở temperature 0 + seed cố định.
+    Dừng khi danh sách loại trừ không dài thêm (mô hình trả rỗng hoặc
+    lặp luật đã có) hoặc hết `max_calls` lần gọi. Luật vòng tự thân bị
+    bỏ và đếm riêng (`self_loop_dropped`); luật còn lại gộp lại (đã
+    khử trùng vì danh sách loại trừ chặn lặp).
+    """
+    excluded: tuple[str, ...] = ()
+    insights: list[Insight] = []
+    tokens_in = 0
+    tokens_out = 0
+    quote_dropped = 0
+    self_loop_dropped = 0
+    for _ in range(max_calls):
+        result, updated = reflect_document_once(chunk, (), excluded)
+        tokens_in += result.tokens_in
+        tokens_out += result.tokens_out
+        quote_dropped += result.source_quote_dropped
+        if updated == excluded:
+            break
+        excluded = updated
+        for insight in result.insights:
+            if _is_self_loop_rule(insight, mapping):
+                self_loop_dropped += 1
+            else:
+                insights.append(insight)
+    return ReflectorResult(
+        insights=tuple(insights),
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        source_quote_dropped=quote_dropped,
+        self_loop_dropped=self_loop_dropped,
+    )
 
 
 def extract_wabo_rules(
@@ -460,6 +540,13 @@ def extract_wabo_rules(
     resume_from: Path | None = None,
     split_chunk: int | None = None,
     split_chunk_at: str | None = None,
+    one_rule: bool = False,
+    max_one_rule_calls: int = 8,
+    reflect_document_one_rule: Callable[
+        [str, Sequence[FactRead], Sequence[str]],
+        tuple[ReflectorResult, tuple[str, ...]],
+    ]
+    | None = None,
 ) -> WaboExtraction:
     """Trích luật thứ tự từ Wabo: Reflector -> gắn khái niệm -> cổng Beta.
 
@@ -474,11 +561,19 @@ def extract_wabo_rules(
     `split_chunk` + `split_chunk_at` tách đoạn đó thành hai tại ranh
     giới Artikel TRƯỚC khi áp `limit_chunks`: các đoạn khác không đổi
     nên file JSONL cũ vẫn nối lại được; hai cờ phải đi cùng nhau.
+    `one_rule` thì mỗi đoạn trích bằng chế độ một luật (lần thử 6, 9.1):
+    lặp tối đa `max_one_rule_calls` lần gọi qua `reflect_document_one_rule`
+    (bắt buộc phải truyền khi bật); luật vòng tự thân bị bỏ và đếm riêng.
     """
     if limit_chunks is not None and limit_chunks < 1:
         raise ValueError(f"limit_chunks phải >= 1, nhận {limit_chunks}")
     if (split_chunk is None) != (split_chunk_at is None):
         raise ValueError("--split-chunk và --split-at phải đi cùng nhau")
+    one_rule_fn = reflect_document_one_rule
+    if one_rule and one_rule_fn is None:
+        raise ValueError("one_rule cần reflect_document_one_rule")
+    if max_one_rule_calls < 1:
+        raise ValueError(f"max_one_rule_calls phải >= 1, nhận {max_one_rule_calls}")
     chunks = split_wabo_text(document.text)
     if split_chunk is not None and split_chunk_at is not None:
         chunks = _split_named_chunk(chunks, index=split_chunk, marker=split_chunk_at)
@@ -489,6 +584,7 @@ def extract_wabo_rules(
     tokens_in = 0
     tokens_out = 0
     source_quote_dropped = 0
+    self_loop_dropped = 0
     with ExitStack() as stack:
         handle = (
             stack.enter_context(open(chunks_out, "a", encoding="utf-8"))
@@ -502,12 +598,22 @@ def extract_wabo_rules(
                 tokens_in += loaded.tokens_in
                 tokens_out += loaded.tokens_out
                 source_quote_dropped += loaded.source_quote_dropped
+                self_loop_dropped += loaded.self_loop_dropped
                 continue
-            result = reflect_document(chunk, ())
+            if one_rule and one_rule_fn is not None:
+                result = _extract_chunk_one_rule(
+                    one_rule_fn,
+                    chunk,
+                    max_calls=max_one_rule_calls,
+                    mapping=mapping,
+                )
+            else:
+                result = reflect_document(chunk, ())
             insights.extend(result.insights)
             tokens_in += result.tokens_in
             tokens_out += result.tokens_out
             source_quote_dropped += result.source_quote_dropped
+            self_loop_dropped += result.self_loop_dropped
             if handle is not None:
                 _write_chunk_line(handle, chunk_index=index, chunk=chunk, result=result)
     seen: set[tuple[str, str, str, str | None]] = set()
@@ -592,6 +698,7 @@ def extract_wabo_rules(
         facts=tuple(facts),
         tokens_in=tokens_in,
         tokens_out=tokens_out,
+        self_loop_dropped=self_loop_dropped,
     )
 
 
@@ -616,6 +723,7 @@ def format_wabo_report(extraction: WaboExtraction) -> str:
         f"{document.sha256[:12]}…)",
         f"Trích được: {extraction.extracted} luật",
         f"Trích dẫn nguồn không khớp (bỏ): {extraction.source_quote_dropped} luật",
+        f"Luật vòng tự thân (bỏ): {extraction.self_loop_dropped} luật",
         f"Không gắn được khái niệm: {extraction.unmapped} luật",
         f"Có điều kiện (bỏ qua): {extraction.conditional} luật",
         f"Cổng Beta loại: {extraction.beta_filtered} luật",
@@ -706,6 +814,18 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--one-rule",
+        action="store_true",
+        help="chế độ một luật (lần thử 6, 9.1): mỗi đoạn hỏi đúng 1 luật "
+        "một lần gọi, lặp tối đa 8 lần (cùng --max-one-rule-calls)",
+    )
+    parser.add_argument(
+        "--max-one-rule-calls",
+        type=int,
+        default=8,
+        help="số lần gọi tối đa mỗi đoạn ở chế độ một luật (mặc định 8)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -732,6 +852,9 @@ def main(argv: list[str] | None = None) -> int:
         reflector = build_reflector(settings, seed=args.seed, max_tokens=args.max_tokens)
         extraction = extract_wabo_rules(
             reflect_document=reflector.reflect_document,
+            reflect_document_one_rule=(
+                reflector.reflect_document_once if args.one_rule else None
+            ),
             document=document,
             mapping=mapping,
             traces=traces,
@@ -741,6 +864,8 @@ def main(argv: list[str] | None = None) -> int:
             resume_from=args.resume_from,
             split_chunk=args.split_chunk,
             split_chunk_at=args.split_at,
+            one_rule=args.one_rule,
+            max_one_rule_calls=args.max_one_rule_calls,
         )
     except (ModelCallError, ReflectorBatchError) as exc:
         print(f"lỗi mô hình: {exc}", file=sys.stderr)

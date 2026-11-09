@@ -373,3 +373,36 @@ def test_document_schema_json_serializable_on_dinh():
     second = json.dumps(document_output_schema(), sort_keys=True)
     assert first == second
     assert first != json.dumps(DECLARE_OUTPUT_SCHEMA, sort_keys=True)
+
+
+# --- Schema một luật (lần thử 6 chống liệt kê, 9.1) ---
+
+
+def test_document_schema_max_rules_1_gioi_han_mang_rules():
+    """`max_rules=1`: mảng `rules` có `maxItems = 1` — 1 luật parse được, 2 luật bị chặn."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    schema = document_output_schema(max_rules=1)
+    assert schema["properties"]["rules"]["maxItems"] == 1
+    one = _rule(activation="aanvraag", target="besluit")
+    rules = parse_reflector_output(json.dumps({"rules": [one]}), schema=schema)
+    assert len(rules) == 1
+    two = _rule(activation="aanvraag", target="bezwaar")
+    with pytest.raises(ReflectorOutputError):
+        parse_reflector_output(json.dumps({"rules": [one, two]}), schema=schema)
+
+
+def test_document_schema_khong_max_rules_thi_khong_co_max_items():
+    """Không truyền `max_rules` thì schema tài liệu như trước: không có `maxItems`."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    assert "maxItems" not in document_output_schema()["properties"]["rules"]
+
+
+@pytest.mark.parametrize("max_rules", [0, -1])
+def test_document_schema_max_rules_khong_hop_le_thi_loi(max_rules):
+    """`max_rules` phải >= 1 khi được đặt; 0 hay âm là lỗi lập trình, lộ ngay."""
+    from praxon_core.learning.declare_schema import document_output_schema
+
+    with pytest.raises(ValueError, match="max_rules phải >= 1"):
+        document_output_schema(max_rules=max_rules)

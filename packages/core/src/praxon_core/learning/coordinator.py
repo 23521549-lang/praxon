@@ -268,13 +268,17 @@ class ReflectorResult:
     giả trong test và Reflector thật khi có, không đổi code nối vai.
     `source_quote_dropped` chỉ đường tài liệu dùng: số luật bị bỏ vì
     trích dẫn nguồn không khớp đoạn (lọc source-quote, 9.1); đường
-    trace luôn 0.
+    trace luôn 0. `self_loop_dropped` chỉ đường tài liệu chế độ một
+    luật dùng: số luật bị bỏ vì vòng tự thân (activation == target sau
+    khi khớp khái niệm, lần thử 6 chống liệt kê, 9.1); các đường khác
+    luôn 0.
     """
 
     insights: tuple[Insight, ...]
     tokens_in: int = 0
     tokens_out: int = 0
     source_quote_dropped: int = 0
+    self_loop_dropped: int = 0
 
 
 class ReflectorFn(Protocol):

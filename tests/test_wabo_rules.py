@@ -22,6 +22,8 @@ from praxon_core.learning.rules import default_rule_table
 from praxon_core.learning.wabo_rules import (
     WaboDocument,
     WaboExtraction,
+    _extract_chunk_one_rule,
+    _is_self_loop_rule,
     extract_wabo_rules,
     extract_wabo_text,
     format_wabo_report,
@@ -976,3 +978,295 @@ def test_noi_lai_jsonl_50_dong_vao_danh_sach_53_doan(tmp_path):
     )
     assert _tom_tat(noi) == _tom_tat(chuan)
     assert format_wabo_report(noi) == format_wabo_report(chuan)
+
+
+# --- Chế độ một luật (lần thử 6 chống liệt kê, 9.1) ---
+
+
+def test_khai_niem_khac_nhau_khop_ve_ma_khac_nhau():
+    """Bảng gắn đơn ánh khái niệm -> mã: hai khái niệm khác nhau không bao giờ cùng mã.
+
+    Tính chất này làm cho so sánh vòng tự thân theo mã đã khớp là chính
+    xác — nếu bảng đổi làm vỡ tính chất này thì test này đỏ và bắt xem
+    lại bộ lọc.
+    """
+    mapping = default_dutch_mapping()
+    terms = [entry.term for entry in mapping.concept]
+    assert len(terms) == 13
+    codes = [resolve_activity(term, mapping) for term in terms]
+    assert None not in codes
+    assert len(set(codes)) == len(codes)
+
+
+def test_loc_vong_tu_than_activation_bang_target_sau_khop():
+    """Luật vòng tự thân: activation và target khớp về cùng một mã thì bị lọc."""
+    mapping = default_dutch_mapping()
+    assert _is_self_loop_rule(_insight("response", "verlengen", "verlengen"), mapping)
+    assert _is_self_loop_rule(_insight("precedence", "aanvraag", "aanvraag"), mapping)
+    assert not _is_self_loop_rule(_insight("response", "aanvraag", "besluit"), mapping)
+    # Khái niệm không gắn được thì không tính là vòng tự thân (đếm ở unmapped).
+    assert not _is_self_loop_rule(_insight("response", "xyz", "xyz"), mapping)
+
+
+class _OneRuleStepStub:
+    """Bước một luật giả: trả luật theo kịch bản, ghi lại danh sách loại trừ đã nhận.
+
+    `script` là danh sách luật (template, activation, target) trả cho từng
+    lần gọi; hết kịch bản thì trả rỗng (mô hình nói hết luật). Luật trả ra
+    được cộng vào danh sách loại trừ theo đúng hợp đồng của
+    `reflect_document_once` (chỉ thêm khi chưa có).
+    """
+
+    def __init__(self, script: Sequence[tuple[str, str, str]]) -> None:
+        self._script = list(script)
+        self.excluded_seen: list[tuple[str, ...]] = []
+
+    def __call__(
+        self, chunk: str, facts: Sequence[FactRead], excluded: Sequence[str]
+    ) -> tuple[ReflectorResult, tuple[str, ...]]:
+        self.excluded_seen.append(tuple(excluded))
+        index = len(self.excluded_seen) - 1
+        if index >= len(self._script):
+            return ReflectorResult(insights=(), tokens_in=1, tokens_out=1), tuple(excluded)
+        template, activation, target = self._script[index]
+        key = f"{template}({activation}, {target})"
+        updated = tuple(excluded) if key in excluded else (*excluded, key)
+        return (
+            ReflectorResult(
+                insights=(_insight(template, activation, target),),
+                tokens_in=1,
+                tokens_out=1,
+            ),
+            updated,
+        )
+
+
+def test_vong_lap_mot_luat_dung_khi_mo_hinh_tra_rong():
+    """Mô hình trả rỗng thì vòng lặp dừng ngay sau 1 lần gọi."""
+    mapping = default_dutch_mapping()
+    stub = _OneRuleStepStub([])
+    result = _extract_chunk_one_rule(stub, "đoạn giả", max_calls=8, mapping=mapping)
+    assert result.insights == ()
+    assert len(stub.excluded_seen) == 1
+    assert (result.tokens_in, result.tokens_out) == (1, 1)
+
+
+def test_vong_lap_mot_luat_dung_khi_lap_luat_da_co():
+    """Mô hình lặp luật đã có thì vòng lặp dừng, không cộng dồn luật lặp."""
+    mapping = default_dutch_mapping()
+    stub = _OneRuleStepStub(
+        [
+            ("response", "aanvraag", "besluit"),
+            ("response", "aanvraag", "besluit"),
+        ]
+    )
+    result = _extract_chunk_one_rule(stub, "đoạn giả", max_calls=8, mapping=mapping)
+    assert [i.canonical_key for i in result.insights] == ["response(aanvraag, besluit)"]
+    assert len(stub.excluded_seen) == 2
+    # Lần gọi 2 nhận danh sách loại trừ đã có luật lần 1.
+    assert stub.excluded_seen[1] == ("response(aanvraag, besluit)",)
+
+
+def test_vong_lap_mot_luat_gop_nhieu_luat_rieng_va_ton_trong_max_calls():
+    """Mỗi lần gọi một luật mới thì gộp lại; hết max_calls thì dừng dù còn luật."""
+    mapping = default_dutch_mapping()
+    stub = _OneRuleStepStub(
+        [
+            ("response", "aanvraag", "besluit"),
+            ("precedence", "aanvraag", "bezwaar"),
+            ("response", "ontwerpbesluit", "ter inzage"),
+            ("response", "beschikking", "bekendmaking"),
+        ]
+    )
+    result = _extract_chunk_one_rule(stub, "đoạn giả", max_calls=3, mapping=mapping)
+    assert [i.canonical_key for i in result.insights] == [
+        "response(aanvraag, besluit)",
+        "precedence(aanvraag, bezwaar)",
+        "response(ontwerpbesluit, ter inzage)",
+    ]
+    assert len(stub.excluded_seen) == 3
+    assert (result.tokens_in, result.tokens_out) == (3, 3)
+
+
+def test_vong_lap_mot_luat_bo_vong_tu_than_roi_tiep_tuc():
+    """Luật vòng tự thân bị bỏ và đếm riêng; vòng lặp tiếp tục tìm luật khác."""
+    mapping = default_dutch_mapping()
+    stub = _OneRuleStepStub(
+        [
+            ("response", "verlengen", "verlengen"),
+            ("response", "aanvraag", "besluit"),
+        ]
+    )
+    result = _extract_chunk_one_rule(stub, "đoạn giả", max_calls=8, mapping=mapping)
+    assert [i.canonical_key for i in result.insights] == ["response(aanvraag, besluit)"]
+    assert result.self_loop_dropped == 1
+    assert len(stub.excluded_seen) == 3  # Lần 3: hết kịch bản -> trả rỗng -> dừng.
+    assert (result.tokens_in, result.tokens_out) == (3, 3)
+
+
+def test_vong_lap_mot_luat_xac_dinh_chay_lai_giong_het():
+    """Tính xác định: cùng kịch bản chạy 2 lần thì kết quả giống hệt."""
+    mapping = default_dutch_mapping()
+    script = [
+        ("response", "aanvraag", "besluit"),
+        ("precedence", "aanvraag", "bezwaar"),
+    ]
+    first = _extract_chunk_one_rule(
+        _OneRuleStepStub(script), "đoạn giả", max_calls=8, mapping=mapping
+    )
+    second = _extract_chunk_one_rule(
+        _OneRuleStepStub(script), "đoạn giả", max_calls=8, mapping=mapping
+    )
+    assert first == second
+
+
+def test_extract_mot_luat_thieu_ham_mot_luat_bao_loi():
+    """Bật one_rule mà không truyền hàm một luật thì lỗi ngay (không lặng lẽ dùng đường cũ)."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    with pytest.raises(ValueError, match="one_rule cần reflect_document_one_rule"):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=_traces_aanvraag_roi_ontwerp(30),
+            policy=policy,
+            one_rule=True,
+        )
+
+
+def test_extract_mot_luat_max_calls_khong_hop_le_bao_loi():
+    """max_one_rule_calls phải >= 1."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    with pytest.raises(ValueError, match="max_one_rule_calls phải >= 1"):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=document,
+            mapping=mapping,
+            traces=_traces_aanvraag_roi_ontwerp(30),
+            policy=policy,
+            one_rule=True,
+            max_one_rule_calls=0,
+            reflect_document_one_rule=_OneRuleStepStub([]),
+        )
+
+
+def test_trich_mot_luat_qua_extract_gop_luat_va_ghi_jsonl(tmp_path):
+    """Đường `extract_wabo_rules(one_rule=True)`: luật gộp qua vòng lặp, JSONL ghi đủ số đếm."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    stub = _OneRuleStepStub(
+        [
+            ("response", "aanvraag", "ontwerpbesluit"),
+            ("response", "ontwerpbesluit", "bezwaar"),
+        ]
+    )
+    chunks_path = tmp_path / "chunks.jsonl"
+    extraction = extract_wabo_rules(
+        reflect_document=_fake_reflect([]),
+        reflect_document_one_rule=stub,
+        document=document,
+        mapping=mapping,
+        traces=_traces_aanvraag_roi_ontwerp(30),
+        policy=policy,
+        chunks_out=chunks_path,
+        one_rule=True,
+    )
+    assert extraction.extracted == 2
+    assert extraction.accepted == 1  # Chỉ luật đầu đủ bằng chứng.
+    assert extraction.beta_filtered == 1
+    assert extraction.self_loop_dropped == 0
+    assert (extraction.tokens_in, extraction.tokens_out) == (3, 3)
+    assert "Luật vòng tự thân (bỏ): 0 luật" in format_wabo_report(extraction)
+    lines = chunks_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["self_loop_dropped"] == 0
+    # Nối lại từ JSONL cho cùng kết quả, không gọi model thêm.
+    stub_noi = _OneRuleStepStub([])
+    noi = extract_wabo_rules(
+        reflect_document=_fake_reflect([]),
+        reflect_document_one_rule=stub_noi,
+        document=document,
+        mapping=mapping,
+        traces=_traces_aanvraag_roi_ontwerp(30),
+        policy=policy,
+        resume_from=chunks_path,
+        one_rule=True,
+    )
+    assert _tom_tat(noi) == _tom_tat(extraction)
+    assert noi.self_loop_dropped == 0
+    assert stub_noi.excluded_seen == []
+
+
+def test_main_co_one_rule_toi_duoc_extract(monkeypatch, tmp_path):
+    """Cờ --one-rule tới được extract: mỗi đoạn gọi bước một luật, không gọi đường cũ."""
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    document = WaboDocument(
+        source_url="https://example.invalid/wabo",
+        version="2015-01-01",
+        valid_start=datetime(2015, 1, 1, tzinfo=UTC),
+        valid_end=datetime(2015, 4, 1, tzinfo=UTC),
+        text=FAKE_TEXT,
+        sha256="giả",
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: document,
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+    document_calls: list[str] = []
+    once_calls: list[tuple[str, ...]] = []
+
+    class FakeReflector:
+        def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+            document_calls.append(text)
+            return ReflectorResult(insights=(), tokens_in=1, tokens_out=2)
+
+        def reflect_document_once(
+            self,
+            text: str,
+            facts: Sequence[FactRead],
+            excluded: Sequence[str] = (),
+            *,
+            scope: str = "global",
+        ) -> tuple[ReflectorResult, tuple[str, ...]]:
+            once_calls.append(tuple(excluded))
+            key = "response(aanvraag, ontwerpbesluit)"
+            if key in excluded:
+                return ReflectorResult(insights=(), tokens_in=1, tokens_out=2), tuple(excluded)
+            return (
+                ReflectorResult(
+                    insights=(_insight("response", "aanvraag", "ontwerpbesluit"),),
+                    tokens_in=1,
+                    tokens_out=2,
+                ),
+                (*excluded, key),
+            )
+
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.build_reflector",
+        lambda settings, seed, max_tokens=None: FakeReflector(),
+    )
+    code = main(
+        [
+            "--html",
+            str(html_path),
+            "--cache-dir",
+            str(tmp_path),
+            "--one-rule",
+            "--max-one-rule-calls",
+            "2",
+        ]
+    )
+    assert code == 0
+    assert document_calls == []
+    # FAKE_TEXT tách thành 1 đoạn; đoạn đó 2 lần gọi (1 luật rồi rỗng).
+    assert len(once_calls) == 2

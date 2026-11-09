@@ -44,6 +44,11 @@ học sau parse, bỏ luật có trích dẫn không khớp đoạn (xem Reflect
 chuyển schema thành GBNF và ép giải mã, nên mô hình không thể sinh từ
 ngoài bảng (`omgevingsvergunning`, `2.15`, `bevoegd gezag`) ở hai vị
 trí này. Đường trace giữ nguyên `DECLARE_OUTPUT_SCHEMA` (mã log tự do).
+Chế độ một luật (lần thử 6, 9.1) truyền `max_rules=1` cho
+`document_output_schema`: mảng `rules` bị giới hạn bằng `maxItems` nên
+mô hình không thể sinh luật thứ hai — `max_rules` là tham số của bên
+gọi, không phải hằng chính sách hard-code (trần insight mỗi lô vẫn là
+tham số cấu hình của Reflector, xem trên).
 """
 
 from __future__ import annotations
@@ -137,17 +142,31 @@ def document_rule_schema(mapping: DutchMappingTable) -> dict[str, Any]:
 
 def document_output_schema(
     mapping: DutchMappingTable | None = None,
+    *,
+    max_rules: int | None = None,
 ) -> dict[str, Any]:
     """Trả schema đầu ra cho đường tài liệu: luật theo `document_rule_schema`.
 
     `mapping` không truyền thì dùng bảng gắn mặc định (tệp TOML cạnh
     `dutch_mapping.py`). Mỗi lần gọi dựng dict mới — khóa đệm băm nội
-    dung nên dict mới với cùng nội dung cho cùng khóa.
+    dung nên dict mới với cùng nội dung cho cùng khóa. `max_rules`
+    giới hạn số luật trong mảng `rules` bằng `maxItems` (chế độ một
+    luật của lần thử 6 chống liệt kê, 9.1: `max_rules=1` — llama-server
+    chuyển thành GBNF nên mô hình không thể sinh luật thứ hai; không
+    truyền thì không giới hạn, như trước).
     """
+    if max_rules is not None and max_rules < 1:
+        raise ValueError(f"max_rules phải >= 1 khi được đặt, nhận {max_rules}")
     table = mapping if mapping is not None else default_dutch_mapping()
+    rules_schema: dict[str, Any] = {
+        "type": "array",
+        "items": document_rule_schema(table),
+    }
+    if max_rules is not None:
+        rules_schema["maxItems"] = max_rules
     return {
         "type": "object",
-        "properties": {"rules": {"type": "array", "items": document_rule_schema(table)}},
+        "properties": {"rules": rules_schema},
         "required": ["rules"],
         "additionalProperties": False,
     }

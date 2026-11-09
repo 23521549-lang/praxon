@@ -37,6 +37,16 @@ Quyết định thiết kế (ghi rõ để review):
   vẫn để rỗng vì tài liệu không có episode làm bằng chứng.
 - `reflect` nhận lô rỗng (hoặc tài liệu rỗng) thì trả kết quả rỗng, không
   gọi mô hình — không có dữ liệu thì không có insight.
+- `reflect_document_once` (lần thử 6 chống liệt kê, 9.1): một lần gọi mô
+  hình cho một đoạn tài liệu, chỉ hỏi đúng 1 luật (schema `maxItems = 1`
+  + prompt một luật + danh sách loại trừ các luật đã tìm được). Trả thêm
+  danh sách loại trừ đã cập nhật để bên gọi lặp: luật bị lọc trích dẫn
+  bỏ vẫn vào danh sách loại trừ (mô hình đã sinh ra nó, lần sau không
+  lặp lại). Lọc vòng tự thân (activation == target sau khi khớp khái
+  niệm) do `wabo_rules` làm — Reflector không biết mã canonical (tránh
+  import vòng), và hai khái niệm khác nhau luôn khớp về hai mã khác nhau
+  (bảng gắn: 13 khái niệm -> 13 mã canonical distinct, đã kiểm thật
+  2026-11-09, có test giữ).
 - `seed` gắn lúc dựng Reflector (chữ ký `ReflectorFn` của coordinator
   không có tham số seed); người gọi truyền seed của vòng học để xác định.
 """
@@ -184,6 +194,56 @@ class Reflector:
             source_quote_dropped=dropped,
         )
 
+    def reflect_document_once(
+        self,
+        document_text: str,
+        facts: Sequence[FactRead],
+        excluded: Sequence[str] = (),
+        *,
+        scope: str = "global",
+    ) -> tuple[ReflectorResult, tuple[str, ...]]:
+        """Một lần gọi mô hình cho tài liệu, chế độ một luật (lần thử 6, 9.1).
+
+        Hỏi đúng 1 luật: schema riêng có `maxItems = 1` trên mảng `rules`
+        (llama-server ép giải mã bằng GBNF) + prompt một luật + danh
+        sách loại trừ `excluded` (các luật đã tìm được trong đoạn này,
+        dạng `template(activation, target)`). Trả (kết quả, danh sách
+        loại trừ đã cập nhật): danh sách mới = cũ + khóa luật mô hình
+        vừa trả (nếu có và chưa có) — kể cả luật bị lọc trích dẫn bỏ, để
+        lần gọi sau không lặp lại nó. Kết quả chứa 0 hoặc 1 insight (sau
+        lọc trích dẫn nguồn). Tài liệu rỗng thì trả kết quả rỗng, danh
+        sách loại trừ không đổi, không gọi mô hình. Bên gọi lặp tối đa N
+        lần, dừng khi danh sách loại trừ không dài thêm (mô hình trả
+        rỗng hoặc lặp luật đã có) — xem `wabo_rules._extract_chunk_one_rule`.
+        """
+        if not document_text.strip():
+            return ReflectorResult(insights=(), tokens_in=0, tokens_out=0), tuple(excluded)
+        rules, tokens_in, tokens_out = self._call_model(
+            _document_prompt(document_text, facts, excluded=excluded, one_rule=True),
+            json_schema=document_output_schema(max_rules=1),
+        )
+        updated = tuple(excluded)
+        if rules:
+            key = _one_rule_key(rules[0])
+            if key not in updated:
+                updated = (*updated, key)
+        kept, dropped = _filter_rules_by_source_quote(rules, document_text)
+        insights = _rules_to_insights(
+            kept,
+            source=InsightSource.DOCUMENT,
+            scope=scope,
+            cap=self._max_insights_per_batch,
+        )
+        return (
+            ReflectorResult(
+                insights=insights,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                source_quote_dropped=dropped,
+            ),
+            updated,
+        )
+
     def _call_model(
         self, prompt: str, *, json_schema: dict[str, Any] | None = None
     ) -> tuple[list[DeclareRule], int, int]:
@@ -287,6 +347,21 @@ DOCUMENT_RULES_NOTE = (
 )
 
 
+#: Ghi chú luật cho prompt tài liệu chế độ một luật (lần thử 6 chống liệt
+#: kê, 9.1): chỉ trả đúng 1 luật (không trả danh sách nhiều luật); câu
+#: trích dẫn nguồn giữ nguyên như v6. Dùng thay `DOCUMENT_RULES_NOTE`
+#: ("Tối đa 15 luật") khi hỏi một luật một lần gọi.
+DOCUMENT_ONE_RULE_NOTE = (
+    "Chỉ trả đúng 1 luật (không trả danh sách nhiều luật). Mỗi luật phải "
+    "kèm trường source là một trích dẫn nguyên văn (một câu hoặc một phần "
+    "câu) trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
+)
+
+#: Câu mở đầu khối loại trừ cho prompt một luật: các luật đã tìm được
+#: trong đoạn này, mô hình không lặp lại chúng ở lần gọi sau.
+DOCUMENT_EXCLUSION_INTRO = "Các luật sau đã tìm được, không lặp lại chúng:"
+
+
 #: Ví dụ mẫu few-shot cho prompt tài liệu v6 (lần thử 4 chống liệt kê, 9.1):
 #: 4 luật thật trích từ 3 đoạn khác nhau (30, 31, 45; không nằm trong tập
 #: thí nghiệm 0/7/12), phủ 6 khái niệm: ontwerpbesluit, ter inzage, beroep,
@@ -321,14 +396,40 @@ DOCUMENT_FEW_SHOT_EXAMPLES = (
 )
 
 
-def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
-    """Prompt cho tài liệu quy trình: chỉ trích luật thứ tự."""
-    return "\n".join(
+def _one_rule_key(rule: DeclareRule) -> str:
+    """Khóa một luật trong danh sách loại trừ: `template(activation, target)`."""
+    return (
+        f"{rule.template.strip().lower()}"
+        f"({rule.activation.strip().lower()}, {rule.target.strip().lower()})"
+    )
+
+
+def _document_prompt(
+    document_text: str,
+    facts: Sequence[FactRead],
+    *,
+    excluded: Sequence[str] = (),
+    one_rule: bool = False,
+) -> str:
+    """Prompt cho tài liệu quy trình: chỉ trích luật thứ tự.
+
+    `one_rule` thì chỉ hỏi đúng 1 luật (ghi chú một luật thay ghi chú v6
+    "Tối đa 15 luật"); `excluded` là các luật đã tìm được trong đoạn này
+    (dạng `template(activation, target)`) — mô hình không lặp lại chúng
+    (lần thử 6 chống liệt kê, 9.1). Mặc định (không truyền gì) thì prompt
+    đúng v6 nguyên văn.
+    """
+    lines = [
+        "Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.",
+        "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ.",
+        DOCUMENT_ONE_RULE_NOTE if one_rule else DOCUMENT_RULES_NOTE,
+        DOCUMENT_FEW_SHOT_EXAMPLES,
+    ]
+    if excluded:
+        lines.append(DOCUMENT_EXCLUSION_INTRO)
+        lines.extend(f"- {key}" for key in excluded)
+    lines.extend(
         [
-            "Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.",
-            "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ.",
-            DOCUMENT_RULES_NOTE,
-            DOCUMENT_FEW_SHOT_EXAMPLES,
             "",
             "Tài liệu:",
             document_text,
@@ -337,6 +438,7 @@ def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
             _facts_block(facts),
         ]
     )
+    return "\n".join(lines)
 
 
 def _normalize_source_quote(text: str) -> str:
