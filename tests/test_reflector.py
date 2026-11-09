@@ -50,6 +50,7 @@ from praxon_core.learning.declare_schema import (
 from praxon_core.learning.generator import EpisodeRow, Trajectory
 from praxon_core.learning.measures import Measures
 from praxon_core.learning.reflector import (
+    DOCUMENT_FEW_SHOT_EXAMPLES,
     DOCUMENT_PROMPT_VERSION,
     DOCUMENT_VOCAB_BLOCK,
     Reflector,
@@ -717,7 +718,7 @@ def test_loi_vinh_vien_khong_thu_lai():
     assert isinstance(excinfo.value.__cause__, ModelCallError)
 
 
-# --- Prompt tài liệu v4 (trích dẫn nguồn, lần thử 2 chống liệt kê 9.1) ---
+# --- Prompt tài liệu v5 (few-shot, lần thử 3 chống liệt kê 9.1) ---
 
 #: Khối từ vựng v4 nguyên văn: khối v3 + câu trích dẫn nguồn ở cuối.
 VOCAB_BLOCK_V4 = (
@@ -733,32 +734,105 @@ VOCAB_BLOCK_V4 = (
     "trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
 )
 
-#: SHA-256 của prompt đoạn 7 thật với khối v4 (tính từ prompt repo sau khi
-#: sửa; đoạn 7 lấy qua pipeline thật như test v3 trước đây).
-PROMPT_SHA_DOAN_7_V4 = "16881cc018705f2e071672a323b62852987445f26a1595f49eaf620ffe541fc1"
+#: Ví dụ mẫu v5 nguyên văn: câu mở đầu + 2 luật thật trích từ đoạn 3.
+FEW_SHOT_V5 = (
+    "Ví dụ mẫu (trích đúng từ một đoạn khác, chỉ để tham khảo cách trích, "
+    "không dùng lại các luật này):\n"
+    '{"template": "precedence", "activation": "besluit", "target": '
+    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
+    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}\n'
+    '{"template": "response", "activation": "besluit", "target": '
+    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
+    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}'
+)
+
+#: SHA-256 của prompt đoạn 7 thật với khối v5 (tính từ prompt repo sau khi
+#: sửa; đoạn 7 lấy qua pipeline thật như test v4 trước đây).
+PROMPT_SHA_DOAN_7_V5 = "b75fc5dd08226553aab924b9033f4a55a575064a79d13b5be163bcb91ae70945"
 
 
-def test_document_prompt_chua_khoi_tu_vung_v4_nguyen_van():
-    """Prompt tài liệu chứa đúng khối v4 nguyên văn, đúng một lần, đúng vị trí."""
-    assert DOCUMENT_PROMPT_VERSION == "v4"
+def test_document_prompt_chua_khoi_tu_vung_v5_nguyen_van():
+    """Prompt tài liệu chứa đúng khối v4 + ví dụ mẫu v5, đúng vị trí."""
+    assert DOCUMENT_PROMPT_VERSION == "v5"
     assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V4
+    assert DOCUMENT_FEW_SHOT_EXAMPLES == FEW_SHOT_V5
     prompt = _document_prompt("Văn bản mẫu.", ())
     assert prompt.count(VOCAB_BLOCK_V4) == 1
+    assert prompt.count(FEW_SHOT_V5) == 1
     lines = prompt.split("\n")
     assert lines[0] == ("Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.")
     assert lines[1] == (
         "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ."
     )
     assert lines[2] == VOCAB_BLOCK_V4
-    assert lines[3] == ""
-    assert lines[4] == "Tài liệu:"
-    assert lines[5] == "Văn bản mẫu."
+    assert "\n".join(lines[3:6]) == FEW_SHOT_V5
+    assert lines[6] == ""
+    assert lines[7] == "Tài liệu:"
+    assert lines[8] == "Văn bản mẫu."
     assert "01_HOOFD" not in prompt
     assert "10_UOV" not in prompt
 
 
-def test_document_prompt_doan_7_khop_sha_v4():
-    """Prompt đoạn 7 thật khớp SHA với khối v4."""
+def test_few_shot_vi_du_dung_dinh_dang_json():
+    """Ví dụ mẫu v5: đúng 2 dòng JSON, đúng luật đã chốt (besluit/bekendmaking)."""
+    parts = DOCUMENT_FEW_SHOT_EXAMPLES.split("\n")
+    assert len(parts) == 3
+    assert parts[0].startswith("Ví dụ mẫu (trích đúng từ một đoạn khác, ")
+    expected = [
+        {
+            "template": "precedence",
+            "activation": "besluit",
+            "target": "bekendmaking",
+            "source": (
+                "tenzij bij ministerieel besluit, dat in de Staatscourant "
+                "wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."
+            ),
+        },
+        {
+            "template": "response",
+            "activation": "besluit",
+            "target": "bekendmaking",
+            "source": (
+                "tenzij bij ministerieel besluit, dat in de Staatscourant "
+                "wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."
+            ),
+        },
+    ]
+    for line, want in zip(parts[1:], expected, strict=True):
+        got = json.loads(line)
+        assert got == want
+        assert set(got) == {"template", "activation", "target", "source"}
+
+
+def test_few_shot_vi_du_khop_doan_3():
+    """Ví dụ mẫu v5 khớp đoạn 3 thật: trích dẫn nguyên văn + khái niệm gắn được."""
+    from praxon_core.learning.dutch_mapping import default_dutch_mapping
+    from praxon_core.learning.reflector import _normalize_source_quote
+    from praxon_core.learning.wabo_rules import (
+        load_wabo_document,
+        resolve_activity,
+        split_wabo_text,
+    )
+
+    cache = Path.home() / ".cache" / "praxon" / "wabo" / "wabo-2015-01-01.html"
+    if not cache.is_file():
+        pytest.skip("chưa tải văn bản Wabo về cache")
+    mapping = default_dutch_mapping()
+    doc = load_wabo_document(cache, mapping=mapping)
+    chunks = split_wabo_text(doc.text)
+    assert len(chunks) == 52
+    chunk3 = _normalize_source_quote(chunks[3])
+    parts = DOCUMENT_FEW_SHOT_EXAMPLES.split("\n")
+    assert len(parts) == 3
+    for line in parts[1:]:
+        rule = json.loads(line)
+        assert _normalize_source_quote(rule["source"]) in chunk3
+        assert resolve_activity(rule["activation"], mapping) is not None
+        assert resolve_activity(rule["target"], mapping) is not None
+
+
+def test_document_prompt_doan_7_khop_sha_v5():
+    """Prompt đoạn 7 thật khớp SHA với khối v5."""
     from praxon_core.learning.wabo_rules import (
         extract_wabo_text,
         split_wabo_text,
@@ -769,7 +843,7 @@ def test_document_prompt_doan_7_khop_sha_v4():
         pytest.skip("chưa tải văn bản Wabo về cache")
     chunks = split_wabo_text(extract_wabo_text(cache.read_text(encoding="utf-8")))
     prompt = _document_prompt(chunks[7], ())
-    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V4
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V5
 
 
 def test_loc_trich_dan_nguon_khop_bua_rong():

@@ -259,8 +259,9 @@ def _trace_batch_prompt(batch: Sequence[Trajectory], facts: Sequence[FactRead]) 
     return "\n".join(lines)
 
 
-#: Phiên bản prompt tài liệu (khối từ vựng v4, xem `DOCUMENT_VOCAB_BLOCK`).
-DOCUMENT_PROMPT_VERSION = "v4"
+#: Phiên bản prompt tài liệu (khối từ vựng v4 + ví dụ mẫu v5, xem
+#: `DOCUMENT_VOCAB_BLOCK` và `DOCUMENT_FEW_SHOT_EXAMPLES`).
+DOCUMENT_PROMPT_VERSION = "v5"
 
 #: Khối từ vựng v4 cho prompt tài liệu (lần thử 2 chống liệt kê, 9.1):
 #: khối v3 + câu trích dẫn nguồn — mỗi luật phải kèm trường `source` là
@@ -285,6 +286,24 @@ DOCUMENT_VOCAB_BLOCK = (
 )
 
 
+#: Ví dụ mẫu few-shot cho prompt tài liệu v5 (lần thử 3 chống liệt kê, 9.1):
+#: 2 luật thật trích từ đoạn 3 (không nằm trong tập thí nghiệm 0/7/12),
+#: mỗi ví dụ gồm template/activation/target/source đầy đủ. Cả hai lấy từ
+#: cùng một câu: đoạn 3 chỉ có đúng một câu chứa khái niệm trong 13 khái
+#: niệm (ministerieel besluit, dat in de Staatscourant wordt bekendgemaakt).
+#: Câu mở đầu nói rõ ví dụ chỉ để tham khảo cách trích, không dùng lại.
+DOCUMENT_FEW_SHOT_EXAMPLES = (
+    "Ví dụ mẫu (trích đúng từ một đoạn khác, chỉ để tham khảo cách trích, "
+    "không dùng lại các luật này):\n"
+    '{"template": "precedence", "activation": "besluit", "target": '
+    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
+    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}\n'
+    '{"template": "response", "activation": "besluit", "target": '
+    '"bekendmaking", "source": "tenzij bij ministerieel besluit, dat in de '
+    'Staatscourant wordt bekendgemaakt, een ander tijdstip wordt vastgesteld."}'
+)
+
+
 def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
     """Prompt cho tài liệu quy trình: chỉ trích luật thứ tự."""
     return "\n".join(
@@ -292,6 +311,7 @@ def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
             "Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.",
             "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ.",
             DOCUMENT_VOCAB_BLOCK,
+            DOCUMENT_FEW_SHOT_EXAMPLES,
             "",
             "Tài liệu:",
             document_text,
