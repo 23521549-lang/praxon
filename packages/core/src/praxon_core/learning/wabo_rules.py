@@ -150,6 +150,7 @@ class WaboExtraction:
     unmapped: int
     conditional: int
     beta_filtered: int
+    source_quote_dropped: int
     outcomes: tuple[WaboRuleOutcome, ...]
     facts: tuple[FactRow, ...]
     tokens_in: int
@@ -357,6 +358,7 @@ class _LoadedChunk:
     insights: tuple[Insight, ...]
     tokens_in: int
     tokens_out: int
+    source_quote_dropped: int = 0
 
 
 def _write_chunk_line(
@@ -374,6 +376,7 @@ def _write_chunk_line(
         "insights": [insight.model_dump(mode="json") for insight in result.insights],
         "tokens_in": result.tokens_in,
         "tokens_out": result.tokens_out,
+        "source_quote_dropped": result.source_quote_dropped,
     }
     handle.write(json.dumps(line, ensure_ascii=False) + "\n")
     handle.flush()
@@ -412,6 +415,7 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             raw_insights = data["insights"]
             tokens_in = data["tokens_in"]
             tokens_out = data["tokens_out"]
+            dropped = data.get("source_quote_dropped", 0)
             if type(index) is not int or index != expected:
                 raise ValueError(f"chunk_index {index!r} khác đoạn chờ {expected}")
             if index >= len(chunks):
@@ -426,6 +430,8 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
                 raise ValueError("tokens_in/tokens_out không phải số nguyên")
             if tokens_in < 0 or tokens_out < 0:
                 raise ValueError("tokens_in/tokens_out âm")
+            if type(dropped) is not int or dropped < 0:
+                raise ValueError("source_quote_dropped không phải số nguyên không âm")
             insights = tuple(Insight.model_validate(item) for item in raw_insights)
         except (KeyError, TypeError, ValueError) as exc:
             print(
@@ -437,6 +443,7 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             insights=insights,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            source_quote_dropped=dropped,
         )
     return loaded
 
@@ -481,6 +488,7 @@ def extract_wabo_rules(
     insights: list[Insight] = []
     tokens_in = 0
     tokens_out = 0
+    source_quote_dropped = 0
     with ExitStack() as stack:
         handle = (
             stack.enter_context(open(chunks_out, "a", encoding="utf-8"))
@@ -493,11 +501,13 @@ def extract_wabo_rules(
                 insights.extend(loaded.insights)
                 tokens_in += loaded.tokens_in
                 tokens_out += loaded.tokens_out
+                source_quote_dropped += loaded.source_quote_dropped
                 continue
             result = reflect_document(chunk, ())
             insights.extend(result.insights)
             tokens_in += result.tokens_in
             tokens_out += result.tokens_out
+            source_quote_dropped += result.source_quote_dropped
             if handle is not None:
                 _write_chunk_line(handle, chunk_index=index, chunk=chunk, result=result)
     seen: set[tuple[str, str, str, str | None]] = set()
@@ -577,6 +587,7 @@ def extract_wabo_rules(
         unmapped=unmapped,
         conditional=conditional,
         beta_filtered=sum(1 for outcome in outcomes if not outcome.accepted),
+        source_quote_dropped=source_quote_dropped,
         outcomes=tuple(outcomes),
         facts=tuple(facts),
         tokens_in=tokens_in,
@@ -604,6 +615,7 @@ def format_wabo_report(extraction: WaboExtraction) -> str:
         f"({document.valid_start.date()}-{document.valid_end.date()}, "
         f"{document.sha256[:12]}…)",
         f"Trích được: {extraction.extracted} luật",
+        f"Trích dẫn nguồn không khớp (bỏ): {extraction.source_quote_dropped} luật",
         f"Không gắn được khái niệm: {extraction.unmapped} luật",
         f"Có điều kiện (bỏ qua): {extraction.conditional} luật",
         f"Cổng Beta loại: {extraction.beta_filtered} luật",

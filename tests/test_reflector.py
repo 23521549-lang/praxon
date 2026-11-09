@@ -44,6 +44,7 @@ from praxon_core.learning.curator import (
 )
 from praxon_core.learning.declare_schema import (
     DECLARE_OUTPUT_SCHEMA,
+    DeclareRule,
     ReflectorOutputError,
 )
 from praxon_core.learning.generator import EpisodeRow, Trajectory
@@ -54,6 +55,7 @@ from praxon_core.learning.reflector import (
     Reflector,
     ReflectorBatchError,
     _document_prompt,
+    _filter_rules_by_source_quote,
     _trace_batch_prompt,
     reflector_from_settings,
 )
@@ -75,6 +77,7 @@ def _rule(
         "template": template,
         "activation": activation,
         "target": target,
+        "source": "De aanvraag wordt ingediend.",
     }
     if condition is not None:
         rule["condition"] = condition
@@ -282,7 +285,9 @@ def test_reflect_document_khong_truyen_max_tokens():
     # dài phải sinh tới hết; cắt giữa chừng làm JSON dở dang, parse hỏng.
     # Chứng minh ở thân yêu cầu thật gửi tới server giả: không có khóa
     # `max_tokens` (adapter chỉ đưa khóa này khi khác None).
-    canned = _rules_text(_rule())
+    rule = _rule()
+    rule["source"] = "De aanvrager dient een aanvraag in"
+    canned = _rules_text(rule)
     model, server = _model([canned])
     reflector = Reflector(model)
     result = reflector.reflect_document("Artikel 1. De aanvrager dient een aanvraag in.", [])
@@ -295,7 +300,9 @@ def test_reflect_document_truyen_max_tokens_khi_dat():
     # Lưới an toàn 9.1: Reflector(max_tokens=2000) đưa đúng khóa `max_tokens`
     # vào thân yêu cầu thật gửi tới server giả; adapter chỉ đưa khóa này
     # khi khác None (đường mặc định đã có test hồi quy riêng ở trên).
-    canned = _rules_text(_rule())
+    rule = _rule()
+    rule["source"] = "De aanvrager dient een aanvraag in"
+    canned = _rules_text(rule)
     model, server = _model([canned])
     reflector = Reflector(model, max_tokens=2000)
     result = reflector.reflect_document("Artikel 1. De aanvrager dient een aanvraag in.", [])
@@ -519,7 +526,9 @@ def test_dau_ra_sai_luoc_do_danh_dau_ca_lo_that_bai():
 
 def test_reflect_document_tra_insight_global():
     """Tài liệu thành Insight: scope global, nguồn document, không episode bằng chứng."""
-    canned = _rules_text(_rule(template="precedence", activation="A", target="B"))
+    rule = _rule(template="precedence", activation="A", target="B")
+    rule["source"] = "Công bố dự thảo"
+    canned = _rules_text(rule)
     model, server = _model([canned])
     reflector = Reflector(model)
     result = reflector.reflect_document("Công bố dự thảo trước quyết định cuối.", [])
@@ -708,11 +717,10 @@ def test_loi_vinh_vien_khong_thu_lai():
     assert isinstance(excinfo.value.__cause__, ModelCallError)
 
 
-# --- Prompt tài liệu v3 (đề xuất triển khai cap 9.1, phương án D-tiếp) ---
+# --- Prompt tài liệu v4 (trích dẫn nguồn, lần thử 2 chống liệt kê 9.1) ---
 
-#: Khối từ vựng v3 nguyên văn (Phụ lục A của đề xuất triển khai cap): khối
-#: v2 + câu giới hạn "Tối đa 15 luật." ở cuối.
-VOCAB_BLOCK_V3 = (
+#: Khối từ vựng v4 nguyên văn: khối v3 + câu trích dẫn nguồn ở cuối.
+VOCAB_BLOCK_V4 = (
     "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
     "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
     "zienswijze, besluit, beschikking, bezwaar, beroep, voorlopige voorziening, "
@@ -720,27 +728,28 @@ VOCAB_BLOCK_V3 = (
     "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
     "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
     "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật."
+    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật. Mỗi luật phải kèm "
+    "trường source là một trích dẫn nguyên văn (một câu hoặc một phần câu) "
+    "trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
 )
 
-#: SHA-256 của prompt thí nghiệm cổng kiểm đoạn 7, biến thể 1 (prompt-cap):
-#: ghi trong `~/workspace/praxon-9.1-prompt-test/vocab-chunks-v2-chunk7.jsonl`,
-#: đã kiểm độc lập từ JSONL. Prompt repo sau khi sửa phải khớp đúng SHA này.
-PROMPT_SHA_DOAN_7_V3 = "0b57a70c49fe3772c93351a6ef861fff04801741c39290a650e397cee0e4fa25"
+#: SHA-256 của prompt đoạn 7 thật với khối v4 (tính từ prompt repo sau khi
+#: sửa; đoạn 7 lấy qua pipeline thật như test v3 trước đây).
+PROMPT_SHA_DOAN_7_V4 = "16881cc018705f2e071672a323b62852987445f26a1595f49eaf620ffe541fc1"
 
 
-def test_document_prompt_chua_khoi_tu_vung_v3_nguyen_van():
-    """Prompt tài liệu chứa đúng khối v3 nguyên văn, đúng một lần, đúng vị trí."""
-    assert DOCUMENT_PROMPT_VERSION == "v3"
-    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V3
+def test_document_prompt_chua_khoi_tu_vung_v4_nguyen_van():
+    """Prompt tài liệu chứa đúng khối v4 nguyên văn, đúng một lần, đúng vị trí."""
+    assert DOCUMENT_PROMPT_VERSION == "v4"
+    assert DOCUMENT_VOCAB_BLOCK == VOCAB_BLOCK_V4
     prompt = _document_prompt("Văn bản mẫu.", ())
-    assert prompt.count(VOCAB_BLOCK_V3) == 1
+    assert prompt.count(VOCAB_BLOCK_V4) == 1
     lines = prompt.split("\n")
     assert lines[0] == ("Trích luật thứ tự Declare (response/precedence) từ tài liệu sau.")
     assert lines[1] == (
         "Chỉ trích luật thứ tự (không trích luật thời hạn); trả JSON theo lược đồ."
     )
-    assert lines[2] == VOCAB_BLOCK_V3
+    assert lines[2] == VOCAB_BLOCK_V4
     assert lines[3] == ""
     assert lines[4] == "Tài liệu:"
     assert lines[5] == "Văn bản mẫu."
@@ -748,8 +757,8 @@ def test_document_prompt_chua_khoi_tu_vung_v3_nguyen_van():
     assert "10_UOV" not in prompt
 
 
-def test_document_prompt_doan_7_khop_sha_thi_nghiem_cap():
-    """Prompt đoạn 7 thật khớp SHA với prompt thí nghiệm biến thể 1 (khối v3)."""
+def test_document_prompt_doan_7_khop_sha_v4():
+    """Prompt đoạn 7 thật khớp SHA với khối v4."""
     from praxon_core.learning.wabo_rules import (
         extract_wabo_text,
         split_wabo_text,
@@ -760,7 +769,62 @@ def test_document_prompt_doan_7_khop_sha_thi_nghiem_cap():
         pytest.skip("chưa tải văn bản Wabo về cache")
     chunks = split_wabo_text(extract_wabo_text(cache.read_text(encoding="utf-8")))
     prompt = _document_prompt(chunks[7], ())
-    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V3
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == PROMPT_SHA_DOAN_7_V4
+
+
+def test_loc_trich_dan_nguon_khop_bua_rong():
+    """Lọc source-quote: khớp (lệch hoa/thường, khoảng trắng) thì giữ; bừa/rỗng thì bỏ."""
+    text = "Artikel 2.5 De aanvraag wordt ingediend bij het bevoegd gezag."
+    rules = [
+        DeclareRule(
+            template="response",
+            activation="aanvraag",
+            target="besluit",
+            source="de  AANVRAAG wordt ingediend",
+        ),
+        DeclareRule(
+            template="precedence",
+            activation="aanvraag",
+            target="besluit",
+            source="Een câu hoàn toàn không có trong đoạn.",
+        ),
+        DeclareRule(template="response", activation="aanvraag", target="bezwaar", source=""),
+        DeclareRule(template="response", activation="aanvraag", target="bezwaar", source="   "),
+    ]
+    kept, dropped = _filter_rules_by_source_quote(rules, text)
+    assert len(kept) == 1
+    assert kept[0].template == "response"
+    assert dropped == 3
+
+
+def test_reflect_document_loc_trich_dan_nguon_khong_khop():
+    """Đường tài liệu: trích dẫn khớp đoạn thì giữ, trích dẫn bừa thì bỏ và đếm."""
+    doc = (
+        "Artikel 2.5 De aanvraag wordt ingediend bij het bevoegd gezag. "
+        "Het besluit volgt binnen acht weken."
+    )
+    khop = _rule(template="response", activation="aanvraag", target="besluit")
+    khop["source"] = "de aanvraag wordt ingediend bij het bevoegd gezag"
+    bua = _rule(template="precedence", activation="aanvraag", target="besluit")
+    bua["source"] = "Een câu hoàn toàn không có trong đoạn."
+    model = _StubModel(_rules_text(khop, bua))
+    reflector = Reflector(model)
+    result = reflector.reflect_document(doc, ())
+    assert [insight.canonical_key for insight in result.insights] == [
+        "response(aanvraag, besluit)"
+    ]
+    assert result.source_quote_dropped == 1
+    assert "trích dẫn nguyên văn" in model.prompts[0]
+
+
+def test_reflect_document_trich_dan_rong_loi_luoc_do():
+    """Trích dẫn rỗng thì cả lô sai lược đồ (schema bắt minLength 1)."""
+    rong = _rule()
+    rong["source"] = ""
+    model = _StubModel(_rules_text(rong))
+    reflector = Reflector(model)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect_document("Artikel 2.5 De aanvraag wordt ingediend.", ())
 
 
 def test_trace_batch_prompt_khong_doi_khi_sua_prompt_tai_lieu():

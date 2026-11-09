@@ -156,18 +156,26 @@ class Reflector:
         Một lần gọi mô hình cho cả tài liệu; Insight từ tài liệu có
         `scope="global"` mặc định (luật Wabo vào `global`, task 9.1) và
         không có episode làm bằng chứng. Tài liệu rỗng thì trả kết quả
-        rỗng, không gọi mô hình.
+        rỗng, không gọi mô hình. Luật có trích dẫn nguồn không khớp đoạn
+        thì bị bỏ trước khi thành Insight (lọc source-quote, 9.1) và
+        được đếm vào `source_quote_dropped`.
         """
         if not document_text.strip():
             return ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
         rules, tokens_in, tokens_out = self._call_model(_document_prompt(document_text, facts))
+        kept, dropped = _filter_rules_by_source_quote(rules, document_text)
         insights = _rules_to_insights(
-            rules,
+            kept,
             source=InsightSource.DOCUMENT,
             scope=scope,
             cap=self._max_insights_per_batch,
         )
-        return ReflectorResult(insights=insights, tokens_in=tokens_in, tokens_out=tokens_out)
+        return ReflectorResult(
+            insights=insights,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            source_quote_dropped=dropped,
+        )
 
     def _call_model(self, prompt: str) -> tuple[list[DeclareRule], int, int]:
         """Một lần gọi mô hình cho một lô: thất bại thì cả lô thất bại.
@@ -251,14 +259,18 @@ def _trace_batch_prompt(batch: Sequence[Trajectory], facts: Sequence[FactRead]) 
     return "\n".join(lines)
 
 
-#: Phiên bản prompt tài liệu (khối từ vựng v3, xem `DOCUMENT_VOCAB_BLOCK`).
-DOCUMENT_PROMPT_VERSION = "v3"
+#: Phiên bản prompt tài liệu (khối từ vựng v4, xem `DOCUMENT_VOCAB_BLOCK`).
+DOCUMENT_PROMPT_VERSION = "v4"
 
-#: Khối từ vựng v3 cho prompt tài liệu (đề xuất triển khai cap 9.1, Phụ lục A):
-#: khối v2 + câu giới hạn "Tối đa 15 luật." — thí nghiệm cổng kiểm đoạn 7
-#: chứng minh câu này chặn được sinh vô hạn (đối chứng v2 chạy vô hạn tới
-#: n_gen 2.626, biến thể cap trả đúng 15 luật và dừng gọn). Số 15 lấy theo
-#: mức cao nhất từng thấy 13 luật/đoạn + headroom 2.
+#: Khối từ vựng v4 cho prompt tài liệu (lần thử 2 chống liệt kê, 9.1):
+#: khối v3 + câu trích dẫn nguồn — mỗi luật phải kèm trường `source` là
+#: một trích dẫn nguyên văn trong đoạn. Khối v3 = khối v2 + câu giới hạn
+#: "Tối đa 15 luật." (thí nghiệm cổng kiểm đoạn 7 chứng minh câu này chặn
+#: được sinh vô hạn: đối chứng v2 chạy vô hạn tới n_gen 2.626, biến thể
+#: cap trả đúng 15 luật và dừng gọn; số 15 lấy theo mức cao nhất từng
+#: thấy 13 luật/đoạn + headroom 2). Câu trích dẫn nguồn thêm vào vì thí
+#: nghiệm neo lần 1 thất bại: đoạn 0 trả y hệt bộ liệt kê v2, đoạn 12
+#: còn 1 luật riêng, J(7,12) = 0,3333.
 DOCUMENT_VOCAB_BLOCK = (
     "Chỉ dùng các khái niệm sau cho activation và target (dùng đúng từ này, "
     "không thêm mã hay ký tự nào khác): aanvraag, ontwerpbesluit, ter inzage, "
@@ -267,7 +279,9 @@ DOCUMENT_VOCAB_BLOCK = (
     "điều (ví dụ '2.15'), không dùng cả câu hay cả đoạn văn, không dùng tên "
     "tác nhân (ví dụ 'bevoegd gezag'), không dùng từ 'declare' / 'response' "
     "/ 'precedence' làm hoạt động. Nếu một đoạn không chứa luật nào giữa các "
-    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật."
+    "khái niệm trên thì trả danh sách rỗng. Tối đa 15 luật. Mỗi luật phải kèm "
+    "trường source là một trích dẫn nguyên văn (một câu hoặc một phần câu) "
+    "trong đoạn mà luật đó lấy từ đó, không bịa trích dẫn."
 )
 
 
@@ -286,6 +300,33 @@ def _document_prompt(document_text: str, facts: Sequence[FactRead]) -> str:
             _facts_block(facts),
         ]
     )
+
+
+def _normalize_source_quote(text: str) -> str:
+    """Chuẩn hóa trích dẫn nguồn: chữ thường + gộp mọi khoảng trắng."""
+    return " ".join(text.lower().split())
+
+
+def _filter_rules_by_source_quote(
+    rules: Sequence[DeclareRule], document_text: str
+) -> tuple[list[DeclareRule], int]:
+    """Bỏ luật có trích dẫn nguồn không khớp đoạn tài liệu.
+
+    Trích dẫn rỗng hoặc (sau chuẩn hóa) không xuất hiện trong đoạn thì
+    luật bị bỏ: mô hình liệt kê từ vựng sẽ gắn trích dẫn bừa hoặc rỗng.
+    Chuẩn hóa cả hai phía nên trích dẫn lệch ngắt dòng/khoảng trắng vẫn
+    khớp. Trả (luật giữ lại, số luật bị bỏ).
+    """
+    normalized_text = _normalize_source_quote(document_text)
+    kept: list[DeclareRule] = []
+    dropped = 0
+    for rule in rules:
+        quote = _normalize_source_quote(rule.source)
+        if quote and quote in normalized_text:
+            kept.append(rule)
+        else:
+            dropped += 1
+    return kept, dropped
 
 
 def _evidence_for_rule(rule: DeclareRule, trajectories: Sequence[Trajectory]) -> list[str]:

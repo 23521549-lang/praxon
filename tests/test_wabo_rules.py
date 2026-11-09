@@ -96,11 +96,18 @@ def _fake_document(text: str) -> WaboDocument:
 
 def _fake_reflect(
     insights: Sequence[Insight],
+    *,
+    dropped: int = 0,
 ) -> Callable[[str, Sequence[FactRead]], ReflectorResult]:
     """Hàm giả cho đường `reflect_document`: trả insight đã định sẵn."""
 
     def reflect_document(text: str, facts: Sequence[FactRead]) -> ReflectorResult:
-        return ReflectorResult(insights=tuple(insights), tokens_in=10, tokens_out=20)
+        return ReflectorResult(
+            insights=tuple(insights),
+            tokens_in=10,
+            tokens_out=20,
+            source_quote_dropped=dropped,
+        )
 
     return reflect_document
 
@@ -500,6 +507,23 @@ def test_format_wabo_report_in_du_so_lieu():
     assert f"response({AANVRAAG}, {ONTWERP})" in report
 
 
+def test_dem_luat_trich_dan_khong_khop_vao_bao_cao():
+    """Số luật bị bỏ vì trích dẫn không khớp được cộng dồn và in ra báo cáo."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    insights = [_insight("response", "aanvraag", "ontwerpbesluit")]
+    extraction = extract_wabo_rules(
+        reflect_document=_fake_reflect(insights, dropped=2),
+        document=document,
+        mapping=mapping,
+        traces=_traces_aanvraag_roi_ontwerp(30),
+        policy=policy,
+    )
+    assert extraction.source_quote_dropped == 2
+    assert "Trích dẫn nguồn không khớp (bỏ): 2 luật" in format_wabo_report(extraction)
+
+
 def test_main_thieu_du_lieu_tra_1(tmp_path):
     code = main(["--html", str(tmp_path / "khong-co.html")])
     assert code == 1
@@ -727,6 +751,38 @@ def test_noi_lai_tuong_duong_chay_lien_mach(tmp_path):
     assert stub_noi.calls == list(chunks[3:])
     assert _tom_tat(noi) == _tom_tat(chuan)
     assert format_wabo_report(noi) == format_wabo_report(chuan)
+
+
+def test_noi_lai_jsonl_giu_so_luat_trich_dan_bi_bo(tmp_path):
+    """Nối lại JSONL giữ số luật trích dẫn bị bỏ của đoạn đã xong."""
+    mapping = default_dutch_mapping()
+    policy = default_rule_table().policy
+    document = _fake_document("Artikel 1.1 De aanvraag wordt ingediend.")
+    traces = _traces_aanvraag_roi_ontwerp(30)
+    chunks_path = tmp_path / "chunks.jsonl"
+    extract_wabo_rules(
+        reflect_document=_fake_reflect(
+            [_insight("response", "aanvraag", "ontwerpbesluit")], dropped=2
+        ),
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        chunks_out=chunks_path,
+    )
+
+    def reflect_chet(text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+        raise AssertionError("đoạn đã xong không được gọi lại mô hình")
+
+    noi = extract_wabo_rules(
+        reflect_document=reflect_chet,
+        document=document,
+        mapping=mapping,
+        traces=traces,
+        policy=policy,
+        resume_from=chunks_path,
+    )
+    assert noi.source_quote_dropped == 2
 
 
 def test_duoi_jsonl_hong_bi_bo_het_va_chay_lai(tmp_path, capsys):

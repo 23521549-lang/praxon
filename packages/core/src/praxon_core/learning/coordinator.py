@@ -266,11 +266,15 @@ class ReflectorResult:
     Reflector thật (task 6.2) chưa làm; coordinator nhận kết quả này
     qua vai tiêm vào (`ReflectorFn`) để vòng học chạy được bằng Reflector
     giả trong test và Reflector thật khi có, không đổi code nối vai.
+    `source_quote_dropped` chỉ đường tài liệu dùng: số luật bị bỏ vì
+    trích dẫn nguồn không khớp đoạn (lọc source-quote, 9.1); đường
+    trace luôn 0.
     """
 
     insights: tuple[Insight, ...]
     tokens_in: int = 0
     tokens_out: int = 0
+    source_quote_dropped: int = 0
 
 
 class ReflectorFn(Protocol):

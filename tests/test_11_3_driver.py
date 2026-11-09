@@ -149,7 +149,16 @@ class FakeModel:
             time.sleep(self._delay)
         return CompletionResult(
             text=json.dumps(
-                {"rules": [{"template": "response", "activation": "A", "target": "B"}]}
+                {
+                    "rules": [
+                        {
+                            "template": "response",
+                            "activation": "A",
+                            "target": "B",
+                            "source": "De aanvraag wordt ingediend.",
+                        }
+                    ]
+                }
             ),
             prompt_tokens=self._prompt_tokens,
             completion_tokens=self._completion_tokens,

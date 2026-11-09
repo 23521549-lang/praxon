@@ -40,7 +40,12 @@ def _rule(
     condition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Một luật dạng dict, để sửa từng trường khi test ca sai."""
-    rule: dict[str, Any] = {"template": template, "activation": activation, "target": target}
+    rule: dict[str, Any] = {
+        "template": template,
+        "activation": activation,
+        "target": target,
+        "source": "De aanvraag wordt ingediend.",
+    }
     if condition is not None:
         rule["condition"] = condition
     return rule
@@ -61,11 +66,17 @@ def test_dau_ra_hop_le_parse_thanh_luat():
         )
     )
     assert rules == [
-        DeclareRule(template="response", activation="A", target="B"),
+        DeclareRule(
+            template="response",
+            activation="A",
+            target="B",
+            source="De aanvraag wordt ingediend.",
+        ),
         DeclareRule(
             template="precedence",
             activation="A",
             target="B",
+            source="De aanvraag wordt ingediend.",
             condition=Condition(attribute="case_type", operator="=", value="X"),
         ),
     ]
@@ -122,12 +133,18 @@ def test_dieu_kien_them_truong_thoi_gian_bi_chan():
 
 
 def test_thieu_truong_bat_buoc_bi_chan():
+    thieu_source = _rule()
+    del thieu_source["source"]
+    source_rong = _rule()
+    source_rong["source"] = ""
     invalid_outputs = [
         {"rules": [_rule(template="response", activation="")]},
         {"rules": [_rule(target="")]},
         {"rules": [{"activation": "A", "target": "B"}]},
         {"rules": [{"template": "response", "target": "B"}]},
         {"rules": [{"template": "response", "activation": "A"}]},
+        {"rules": [thieu_source]},
+        {"rules": [source_rong]},
         {"rules": "response(A, B)"},
         {"rules": ["response(A, B)"]},
         {"rules": [], "extra": 1},
@@ -234,6 +251,7 @@ def test_adapter_tu_choi_luat_thoi_han():
                     "template": "response",
                     "activation": "A",
                     "target": "B",
+                    "source": "De aanvraag wordt ingediend.",
                     "deadline": "8 weeks",
                 }
             ]

@@ -31,6 +31,12 @@ sách `DeclareRule` có kiểu. Khóa đệm (spec dòng 189) băm schema này, 
 Không có `maxItems` cho `rules`: trần số insight mỗi lô là tham số cấu
 hình của Reflector (bất biến 4, task 6.4), không phải hằng của schema —
 hard-code nó ở đây là hard-code số chính sách.
+
+Mỗi luật phải kèm `source`: trích dẫn nguyên văn (một câu hoặc một phần
+câu) trong đoạn mà luật đó lấy từ đó, là lần thử 2 chống liệt kê từ vựng
+(9.1, 2026-11-09). Schema bắt buộc trường này (`minLength: 1`) nên mô
+hình thiếu trích dẫn thì cả lô sai lược đồ; đường tài liệu còn lọc cơ
+học sau parse, bỏ luật có trích dẫn không khớp đoạn (xem Reflector).
 """
 
 from __future__ import annotations
@@ -71,6 +77,7 @@ DECLARE_RULE_SCHEMA: dict[str, Any] = {
         "template": {"type": "string", "enum": list(TIER_1_TEMPLATES)},
         "activation": {"type": "string", "minLength": 1},
         "target": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
         "condition": {
             "type": "object",
             "properties": {
@@ -82,7 +89,7 @@ DECLARE_RULE_SCHEMA: dict[str, Any] = {
             "additionalProperties": False,
         },
     },
-    "required": ["template", "activation", "target"],
+    "required": ["template", "activation", "target", "source"],
     "additionalProperties": False,
 }
 
@@ -130,12 +137,14 @@ class DeclareRule:
 
     Đây là hình dạng đầu ra của mô hình — chưa phải `Insight`: mô hình
     không biết case làm bằng chứng hay phạm vi, hai thứ đó Reflector (6.4)
-    gắn thêm khi xây Insight.
+    gắn thêm khi xây Insight. `source` là trích dẫn nguyên văn trong đoạn
+    mà luật lấy từ đó (một câu hoặc một phần câu).
     """
 
     template: str
     activation: str
     target: str
+    source: str
     condition: Condition | None = None
 
     @property
@@ -193,6 +202,7 @@ def parse_reflector_output(text: str) -> list[DeclareRule]:
                 template=str(raw["template"]),
                 activation=str(raw["activation"]),
                 target=str(raw["target"]),
+                source=str(raw["source"]),
                 condition=condition,
             )
         )

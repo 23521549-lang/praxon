@@ -96,6 +96,7 @@ class _FakeModel:
                             "template": template,
                             "activation": activation,
                             "target": target,
+                            "source": "De aanvraag wordt ingediend.",
                         }
                     ]
                 }
