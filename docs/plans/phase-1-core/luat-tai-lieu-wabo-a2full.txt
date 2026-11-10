@@ -1,0 +1,27 @@
+# model_id: Qwen/Qwen3-8B-GGUF
+# model_revision: 7c41481f57cb95916b40956ab2f0b139b296d974
+# extracted_at: 2026-11-10T12:54:50Z
+# seed: 42
+# beta_support: 0.0
+# beta_confidence: 0.7
+# beta_promote_probability: 0.95
+# beta_prior_confidence: 0.5
+# n_rules_extracted: 100
+# n_rules_gated: 17
+precedence(01_HOOFD_015, 01_BB_630)
+precedence(01_HOOFD_015, 01_HOOFD_440_1)
+precedence(01_HOOFD_015, 01_HOOFD_490_1)
+precedence(01_HOOFD_015, 01_HOOFD_490_4)
+precedence(01_HOOFD_015, 01_HOOFD_520)
+precedence(01_HOOFD_015, 06_VD_010)
+precedence(01_HOOFD_015, 08_AWB45_060)
+precedence(01_HOOFD_015, 10_UOV_010)
+precedence(01_HOOFD_015, 10_UOV_060)
+precedence(01_HOOFD_440_1, 10_UOV_010)
+precedence(01_HOOFD_490_1, 01_BB_540)
+precedence(01_HOOFD_490_1, 01_BB_630)
+precedence(01_HOOFD_490_1, 01_HOOFD_490_4)
+response(01_HOOFD_015, 01_HOOFD_490_1)
+response(01_HOOFD_440_1, 10_UOV_010)
+response(10_UOV_010, 01_HOOFD_490_1)
+response(10_UOV_060, 01_HOOFD_490_1)
