@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -73,9 +74,11 @@ __all__ = [
     "TIER_1_TEMPLATES",
     "Condition",
     "DeclareRule",
+    "GroundedCombo",
     "ReflectorOutputError",
     "document_output_schema",
     "document_rule_schema",
+    "grounded_combo_output_schema",
     "parse_reflector_output",
     "validate_reflector_output",
 ]
@@ -167,6 +170,55 @@ def document_output_schema(
     return {
         "type": "object",
         "properties": {"rules": rules_schema},
+        "required": ["rules"],
+        "additionalProperties": False,
+    }
+
+
+#: Một combo có căn cứ cho A2-full (port từ thí nghiệm loop-back v2, 9.1):
+#: ((template, activation, target), câu nguồn) — cặp đã tách sẵn thành
+#: ba trường, câu nguồn là đúng một câu của đoạn chứa cả hai khái niệm
+#: (word-boundary, không phân biệt hoa/thường). Dạng tách sẵn để
+#: `parse_reflector_output` dùng lại được trực tiếp: enum schema phát
+#: object {template, activation, target, source}, không cần parse lại
+#: chuỗi "pair" (quyết định H3 của đề xuất port A2-full).
+GroundedCombo = tuple[tuple[str, str, str], str]
+
+
+def grounded_combo_output_schema(
+    combos: Sequence[GroundedCombo],
+) -> dict[str, Any]:
+    """Trả schema đầu ra A2-full: `rules.items` là enum các object có căn cứ.
+
+    Mỗi combo cho phép thành một object {template, activation, target,
+    source} trong enum — mô hình bắt buộc chọn đúng một combo trong danh
+    sách, không tự đặt trích dẫn (port từ `dynamic_grammar_schema_combos`
+    của thí nghiệm loop-back v2, 9.1). `maxItems = 1`: tối đa một luật
+    mỗi lần gọi. Enum rỗng thì báo lỗi ngay tại đây — server từ chối
+    schema enum rỗng (400) nên bên gọi phải dừng trước khi gọi (het_cap),
+    không truyền enum rỗng vào đây.
+    """
+    if not combos:
+        raise ValueError("grounded_combo_output_schema cần ít nhất một combo")
+    return {
+        "type": "object",
+        "properties": {
+            "rules": {
+                "type": "array",
+                "maxItems": 1,
+                "items": {
+                    "enum": [
+                        {
+                            "template": template,
+                            "activation": activation,
+                            "target": target,
+                            "source": source,
+                        }
+                        for (template, activation, target), source in combos
+                    ]
+                },
+            },
+        },
         "required": ["rules"],
         "additionalProperties": False,
     }

@@ -17,23 +17,35 @@ from praxon_core.adapters.language_model import ModelCallError
 from praxon_core.declare.index import Trace
 from praxon_core.learning.coordinator import ReflectorResult
 from praxon_core.learning.curator import FactRead, Insight, InsightSource
+from praxon_core.learning.declare_schema import DeclareRule, GroundedCombo
 from praxon_core.learning.dutch_mapping import DutchMappingTable, default_dutch_mapping
+from praxon_core.learning.reflector import GroundedCallResult
 from praxon_core.learning.rules import default_rule_table
 from praxon_core.learning.wabo_rules import (
     WaboDocument,
     WaboExtraction,
+    _extract_chunk_grounded,
     _extract_chunk_one_rule,
     _is_self_loop_rule,
+    assert_grounded_census,
     extract_wabo_rules,
     extract_wabo_text,
     format_wabo_report,
+    grounded_combo_indices,
+    grounded_combos,
+    grounded_pairs_for_chunk,
+    is_grounded,
     load_bpic_traces,
     load_wabo_document,
     main,
+    matched_terms,
+    pair_key,
     parse_valid_during,
     resolve_activity,
     split_chunk_at_article,
+    split_sentences,
     split_wabo_text,
+    write_doc_law_file,
 )
 from praxon_core.settings import Settings
 
@@ -1270,3 +1282,518 @@ def test_main_co_one_rule_toi_duoc_extract(monkeypatch, tmp_path):
     assert document_calls == []
     # FAKE_TEXT tách thành 1 đoạn; đoạn đó 2 lần gọi (1 luật rồi rỗng).
     assert len(once_calls) == 2
+
+
+def test_matched_terms_word_boundary():
+    """Khớp word-boundary: 'aanvraag' không khớp 'aanvragen'."""
+    assert matched_terms("De aanvraag wordt ingediend.", ["aanvraag", "besluit"]) == [
+        "aanvraag"
+    ]
+    assert matched_terms("De aanvragen worden ingediend.", ["aanvraag"]) == []
+    assert matched_terms("AANVRAAG en besluit.", ["aanvraag", "besluit"]) == [
+        "aanvraag",
+        "besluit",
+    ]
+
+
+def test_is_grounded_can_hai_khai_niem_trong_trich_dan():
+    """Cổng R1: cả hai khái niệm phải có trong chính trích dẫn."""
+    terms = ["aanvraag", "besluit"]
+    assert is_grounded("aanvraag", "besluit", "De aanvraag leidt tot het besluit.", terms)
+    assert not is_grounded("aanvraag", "besluit", "De aanvraag wordt ingediend.", terms)
+    assert not is_grounded("aanvraag", "besluit", "Het besluit valt.", terms)
+
+
+def test_pair_key_dang_chuoi_duy_nhat():
+    assert pair_key("precedence", "aanvraag", "besluit") == "precedence(aanvraag, besluit)"
+
+
+def test_split_sentences_ranh_gioi_tong_quat():
+    assert split_sentences("Câu một. Câu hai! Câu ba? Câu bốn.") == [
+        "Câu một.",
+        "Câu hai!",
+        "Câu ba?",
+        "Câu bốn.",
+    ]
+
+
+def test_grounded_combos_tren_doan_toy_tieng_anh():
+    """G4: đoạn toy tiếng Anh — 2 câu đều chứa cả hai khái niệm: 4 cặp, 8 combo."""
+    chunk = (
+        "The application must be filed before the decision. "
+        "The decision follows the application."
+    )
+    terms = ["application", "decision"]
+    first = "The application must be filed before the decision."
+    second = "The decision follows the application."
+    assert grounded_combos(chunk, terms) == [
+        (("precedence", "application", "decision"), first),
+        (("precedence", "application", "decision"), second),
+        (("precedence", "decision", "application"), first),
+        (("precedence", "decision", "application"), second),
+        (("response", "application", "decision"), first),
+        (("response", "application", "decision"), second),
+        (("response", "decision", "application"), first),
+        (("response", "decision", "application"), second),
+    ]
+    assert grounded_pairs_for_chunk(chunk, terms) == [
+        ("precedence", "application", "decision"),
+        ("precedence", "decision", "application"),
+        ("response", "application", "decision"),
+        ("response", "decision", "application"),
+    ]
+    assert grounded_combo_indices(chunk, terms) == [
+        (("precedence", "application", "decision"), 0),
+        (("precedence", "application", "decision"), 1),
+        (("precedence", "decision", "application"), 0),
+        (("precedence", "decision", "application"), 1),
+        (("response", "application", "decision"), 0),
+        (("response", "application", "decision"), 1),
+        (("response", "decision", "application"), 0),
+        (("response", "decision", "application"), 1),
+    ]
+
+
+def test_grounded_combos_doan_khong_can_cu():
+    """Mỗi câu chỉ có một khái niệm thì 0 combo (như đoạn 12 của Wabo)."""
+    chunk = "The application was filed. The decision came later."
+    terms = ["application", "decision"]
+    assert grounded_combos(chunk, terms) == []
+    assert grounded_pairs_for_chunk(chunk, terms) == []
+
+
+def test_assert_grounded_census_khop_file_that():
+    """Code port tính đúng tập combo/cặp của thí nghiệm trên văn bản thật."""
+    cache = Path.home() / ".cache" / "praxon" / "wabo" / "wabo-2015-01-01.html"
+    census = (
+        Path.home() / "workspace" / "praxon-9.1-prompt-test" / "loopback-r2-grounded-pairs.json"
+    )
+    if not cache.is_file() or not census.is_file():
+        pytest.skip("chưa có văn bản Wabo hoặc file kiểm toán trong cache")
+    document = load_wabo_document(cache, mapping=default_dutch_mapping())
+    terms = [entry.term for entry in default_dutch_mapping().concept]
+    chunks = split_wabo_text(document.text)
+    assert len(chunks) == 52
+    assert_grounded_census(chunks, terms, census)
+
+
+def test_write_doc_law_file_vong_tron_qua_driver(tmp_path):
+    """File viết ra đọc lại được bằng _read_doc_law_file thật của driver."""
+    from praxon_core.eval.bpic_measure import _read_doc_law_file
+
+    path = tmp_path / "luat-tai-lieu-wabo-a2full.txt"
+    write_doc_law_file(
+        path,
+        rules=[
+            "precedence(01_HOOFD_015, 01_BB_540)",
+            "response(01_HOOFD_015, 01_BB_540)",
+            "precedence(01_HOOFD_015, 01_BB_540)",
+        ],
+        model_id="Qwen/Qwen3-8B-GGUF",
+        model_revision="7c41481f57cb95916b40956ab2f0b139b296d974",
+        extracted_at="2026-11-10T00:00:00Z",
+        seed=42,
+        beta_support=0.0,
+        beta_confidence=0.7,
+        beta_promote_probability=0.95,
+        beta_prior_confidence=0.5,
+        n_rules_extracted=100,
+        n_rules_gated=2,
+    )
+    provenance, rules = _read_doc_law_file(
+        path,
+        model_id="Qwen/Qwen3-8B-GGUF",
+        model_revision="7c41481f57cb95916b40956ab2f0b139b296d974",
+    )
+    assert [rule.canonical_key for rule in rules] == [
+        "precedence(01_HOOFD_015, 01_BB_540)",
+        "response(01_HOOFD_015, 01_BB_540)",
+    ]
+    assert provenance.n_rules_extracted == 100
+    assert provenance.n_rules_gated == 2
+    assert provenance.seed == 42
+    header = path.read_text(encoding="utf-8").splitlines()[:10]
+    assert header[0] == "# model_id: Qwen/Qwen3-8B-GGUF"
+    assert header[8] == "# n_rules_extracted: 100"
+    with pytest.raises(ValueError, match="sai provenance"):
+        _read_doc_law_file(path, model_id="Khac/Model", model_revision="0000")
+
+
+class _FakeGrounded:
+    """Mô hình giả chế độ grounded: mỗi lần gọi trả combo đầu tiên của tập cho phép.
+
+    Bắt chước phương thức thật: xóa mọi combo của cặp vừa trả khỏi tập
+    cho phép. `empty_calls`: số lần gọi đầu trả rỗng (để kiểm thử lại).
+    `drop_first`: lần gọi đầu không rỗng bị loại theo cổng trích dẫn
+    ("quote") hoặc cổng căn cứ ("grounding") — để kiểm mảng `calls`.
+    """
+
+    def __init__(self, *, empty_calls: int = 0, drop_first: str | None = None) -> None:
+        self.calls: list[tuple[tuple[str, str, str], ...]] = []
+        self.empty_calls = empty_calls
+        self.drop_first = drop_first
+        self._dropped = False
+
+    def __call__(
+        self,
+        chunk: str,
+        facts: Sequence[FactRead],
+        allowed: Sequence[GroundedCombo],
+    ) -> GroundedCallResult:
+        self.calls.append(tuple(pair for pair, _ in allowed))
+        if self.empty_calls > 0:
+            self.empty_calls -= 1
+            return GroundedCallResult(
+                result=ReflectorResult(insights=(), tokens_in=1, tokens_out=1),
+                kept_rules=(),
+                remaining=tuple(allowed),
+                grounding_dropped=0,
+                empty=True,
+            )
+        (template, activation, target), source = allowed[0]
+        remaining = tuple(
+            combo for combo in allowed if combo[0] != (template, activation, target)
+        )
+        if self.drop_first is not None and not self._dropped:
+            self._dropped = True
+            if self.drop_first == "quote":
+                result = ReflectorResult(
+                    insights=(), tokens_in=1, tokens_out=1, source_quote_dropped=1
+                )
+                grounding = 0
+            else:
+                result = ReflectorResult(insights=(), tokens_in=1, tokens_out=1)
+                grounding = 1
+            return GroundedCallResult(
+                result=result,
+                kept_rules=(),
+                remaining=remaining,
+                grounding_dropped=grounding,
+                empty=False,
+            )
+        rule = DeclareRule(
+            template=template, activation=activation, target=target, source=source
+        )
+        insight = Insight(
+            template=template,
+            activation=activation,
+            target=target,
+            condition=None,
+            evidence_episode_ids=[],
+            source=InsightSource.DOCUMENT,
+            scope="global",
+        )
+        return GroundedCallResult(
+            result=ReflectorResult(insights=(insight,), tokens_in=1, tokens_out=1),
+            kept_rules=(rule,),
+            remaining=remaining,
+            grounding_dropped=0,
+            empty=False,
+        )
+
+
+def _grounded_chunk_toy() -> str:
+    """Đoạn toy: 2 câu đều chứa aanvraag + ontwerpbesluit — 4 cặp, 8 combo."""
+    return "De aanvraag leidt tot het ontwerpbesluit. Het ontwerpbesluit volgt op de aanvraag."
+
+
+def _fake_document_grounded() -> WaboDocument:
+    """Văn bản giả 2 đoạn: đoạn 0 có căn cứ (4 cặp), đoạn 1 không có cặp nào.
+
+    Mỗi điều đệm ~2000 ký tự: đủ dài để hai điều không gộp thành một
+    đoạn (`split_wabo_text` gộp các điều ngắn khi vừa dưới `max_chars`
+    4000), nhưng mỗi điều vẫn dưới 4000 nên không bị cắt cứng.
+    """
+    text = "\n\n".join(
+        [
+            "Artikel 1.1 " + _grounded_chunk_toy() + " " + "a" * 2000,
+            "Artikel 1.2 De aanvraag wordt ingediend. " + "b" * 2000,
+        ]
+    )
+    return _fake_document(text)
+
+
+def test_assert_grounded_census_thieu_doan_bao_loi(tmp_path):
+    """File kiểm toán thiếu đoạn thì ValueError rõ ràng, không KeyError thô."""
+    census = tmp_path / "census.json"
+    census.write_text(
+        json.dumps(
+            {
+                "0": {
+                    "grounded_pairs": {},
+                    "n_pair_sentence_combos": 0,
+                    "n_grounded_pairs": 0,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="thiếu/sai dạng ở đoạn 1"):
+        assert_grounded_census(
+            ["De aanvraag wordt ingediend.", "De aanvraag leidt tot het besluit."],
+            ["aanvraag", "besluit"],
+            census,
+        )
+
+
+def test_extract_chunk_grounded_loop_can_het_tap_cho_phep():
+    """Lặp đúng một lần gọi mỗi cặp: 4 cặp -> 4 lần gọi, 4 luật giữ."""
+    fake = _FakeGrounded()
+    terms = ["aanvraag", "ontwerpbesluit"]
+    outcome = _extract_chunk_grounded(fake, _grounded_chunk_toy(), terms)
+    assert len(fake.calls) == 4
+    assert len(outcome.result.insights) == 4
+    assert len(outcome.kept_rules) == 4
+    assert len(outcome.pairs) == 4
+    assert outcome.n_combos == 8
+    assert outcome.grounding_dropped == 0
+    assert outcome.result.tokens_in == 4
+    assert outcome.result.tokens_out == 4
+
+
+def test_extract_chunk_grounded_tra_rong_thu_lai_mot_lan_roi_dung():
+    """Trả rỗng 1 lần thì thử lại: lần 2 có luật thì tiếp tục tới hết tập."""
+    fake = _FakeGrounded(empty_calls=1)
+    outcome = _extract_chunk_grounded(
+        fake, _grounded_chunk_toy(), ["aanvraag", "ontwerpbesluit"]
+    )
+    assert len(fake.calls) == 5
+    assert len(outcome.result.insights) == 4
+
+
+def test_extract_chunk_grounded_tra_rong_hai_lan_lien_thi_dung():
+    """Trả rỗng 2 lần liên tiếp thì dừng (không gọi vô hạn)."""
+    fake = _FakeGrounded(empty_calls=99)
+    outcome = _extract_chunk_grounded(
+        fake, _grounded_chunk_toy(), ["aanvraag", "ontwerpbesluit"]
+    )
+    assert len(fake.calls) == 2
+    assert outcome.result.insights == ()
+
+
+def test_extract_chunk_grounded_ghi_dien_bien_tung_lan_goi():
+    """Mảng calls ghi đúng từng lần gọi: empty/dropped/kept theo thứ tự."""
+    fake = _FakeGrounded(empty_calls=1, drop_first="quote")
+    outcome = _extract_chunk_grounded(
+        fake, _grounded_chunk_toy(), ["aanvraag", "ontwerpbesluit"]
+    )
+    assert len(fake.calls) == 5
+    assert len(outcome.result.insights) == 3
+    assert outcome.calls[0] == {"empty": True}
+    assert outcome.calls[1] == {"dropped": "quote"}
+    assert outcome.calls[2]["kept"]["template"] == "precedence"
+    assert outcome.calls[2]["kept"]["activation"] == "ontwerpbesluit"
+    assert outcome.grounding_dropped == 0
+    fake_grounding = _FakeGrounded(drop_first="grounding")
+    outcome_grounding = _extract_chunk_grounded(
+        fake_grounding, _grounded_chunk_toy(), ["aanvraag", "ontwerpbesluit"]
+    )
+    assert outcome_grounding.calls[0] == {"dropped": "grounding"}
+    assert outcome_grounding.grounding_dropped == 1
+
+
+def test_extract_chunk_grounded_cap_15_dung_dung_15_lan():
+    """Cap chỉ để kiểm chứng: 24 cặp, cap 15 -> đúng 15 lần gọi."""
+    chunk = "De aanvraag en het ontwerpbesluit en het besluit en het bezwaar."
+    terms = ["aanvraag", "ontwerpbesluit", "besluit", "bezwaar"]
+    fake = _FakeGrounded()
+    outcome = _extract_chunk_grounded(fake, chunk, terms, max_grounded_calls=15)
+    assert outcome.n_combos == 24
+    assert len(fake.calls) == 15
+    assert len(outcome.result.insights) == 15
+    assert len(outcome.kept_rules) == 15
+
+
+def test_extract_chunk_grounded_doan_khong_can_cu_khong_goi():
+    """Đoạn 0 cặp: không gọi mô hình lần nào."""
+    fake = _FakeGrounded()
+    outcome = _extract_chunk_grounded(
+        fake, "De aanvraag wordt ingediend.", ["aanvraag", "ontwerpbesluit"]
+    )
+    assert fake.calls == []
+    assert outcome.pairs == ()
+    assert outcome.n_combos == 0
+    assert outcome.result.insights == ()
+
+
+def test_extract_wabo_rules_grounded_het_duong_day(tmp_path):
+    """Grounded end-to-end: Beta chấp nhận 2/4 luật, JSONL đủ trường, báo cáo đếm đoạn 0 cặp."""
+    fake = _FakeGrounded()
+    jsonl = tmp_path / "grounded.jsonl"
+    extraction = extract_wabo_rules(
+        reflect_document=_fake_reflect([]),
+        reflect_document_grounded=fake,
+        document=_fake_document_grounded(),
+        mapping=default_dutch_mapping(),
+        traces=_traces_aanvraag_roi_ontwerp(30),
+        policy=default_rule_table().policy,
+        chunks_out=jsonl,
+        grounded=True,
+    )
+    assert extraction.extracted == 4
+    assert extraction.accepted == 2
+    assert extraction.beta_filtered == 2
+    assert extraction.zero_grounded_chunks == 1
+    assert "Đoạn có 0 cặp có căn cứ: 1 đoạn" in format_wabo_report(extraction)
+    lines = [json.loads(raw) for raw in jsonl.read_text(encoding="utf-8").splitlines()]
+    assert len(lines) == 2
+    assert lines[0]["grounded_pairs"] == 4
+    assert lines[0]["n_combos"] == 8
+    assert len(lines[0]["grounded_rules"]) == 4
+    assert lines[0]["n_calls"] == 4
+    assert lines[0]["grounding_dropped"] == 0
+    assert len(lines[0]["calls"]) == 4
+    assert all("kept" in call for call in lines[0]["calls"])
+    assert lines[0]["grounded_rules"][0]["source"].startswith("Artikel 1.1 De aanvraag leidt")
+    assert lines[1]["grounded_pairs"] == 0
+    assert lines[1]["n_combos"] == 0
+    assert lines[1]["grounded_rules"] == []
+    assert lines[1]["n_calls"] == 0
+    assert lines[1]["calls"] == []
+    # Nối lại từ JSONL: báo cáo giống hệt chạy liền mạch.
+    resumed = extract_wabo_rules(
+        reflect_document=_fake_reflect([]),
+        reflect_document_grounded=_FakeGrounded(),
+        document=_fake_document_grounded(),
+        mapping=default_dutch_mapping(),
+        traces=_traces_aanvraag_roi_ontwerp(30),
+        policy=default_rule_table().policy,
+        resume_from=jsonl,
+        grounded=True,
+    )
+    assert resumed.extracted == extraction.extracted
+    assert resumed.accepted == extraction.accepted
+    assert resumed.zero_grounded_chunks == 1
+
+
+def test_extract_wabo_rules_grounded_can_reflect_bao_loi():
+    with pytest.raises(ValueError, match="grounded cần reflect_document_grounded"):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            document=_fake_document_grounded(),
+            mapping=default_dutch_mapping(),
+            traces=(),
+            policy=default_rule_table().policy,
+            grounded=True,
+        )
+
+
+def test_extract_wabo_rules_max_grounded_calls_bang_0_bao_loi():
+    with pytest.raises(ValueError, match="max_grounded_calls phải >= 1"):
+        extract_wabo_rules(
+            reflect_document=_fake_reflect([]),
+            reflect_document_grounded=_FakeGrounded(),
+            document=_fake_document_grounded(),
+            mapping=default_dutch_mapping(),
+            traces=(),
+            policy=default_rule_table().policy,
+            grounded=True,
+            max_grounded_calls=0,
+        )
+
+
+def test_main_grounded_ghi_file_luat(monkeypatch, tmp_path):
+    """Main --grounded --write-law-file: ghi file luật đọc lại được bằng driver."""
+    from praxon_core.eval.bpic_measure import _read_doc_law_file
+
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    document = _fake_document_grounded()
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: document,
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+    fake = _FakeGrounded()
+
+    class FakeReflector:
+        def reflect_document(self, text: str, facts: Sequence[FactRead]) -> ReflectorResult:
+            return ReflectorResult(insights=(), tokens_in=1, tokens_out=1)
+
+        def reflect_document_grounded(
+            self,
+            text: str,
+            facts: Sequence[FactRead],
+            allowed: Sequence[GroundedCombo],
+        ) -> GroundedCallResult:
+            return fake(text, facts, allowed)
+
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.build_reflector",
+        lambda settings, seed, max_tokens=None: FakeReflector(),
+    )
+    law_path = tmp_path / "luat-tai-lieu-wabo-a2full.txt"
+    code = main(
+        [
+            "--html",
+            str(html_path),
+            "--cache-dir",
+            str(tmp_path),
+            "--grounded",
+            "--write-law-file",
+            str(law_path),
+        ]
+    )
+    assert code == 0
+    provenance, rules = _read_doc_law_file(
+        law_path,
+        model_id="Qwen/Qwen3-8B-GGUF",
+        model_revision="7c41481f57cb95916b40956ab2f0b139b296d974",
+    )
+    assert [rule.canonical_key for rule in rules] == [
+        "precedence(01_HOOFD_015, 01_HOOFD_440_1)",
+        "response(01_HOOFD_015, 01_HOOFD_440_1)",
+    ]
+    assert provenance.n_rules_gated == 2
+
+
+def test_main_census_sai_tra_1_khong_goi_model(monkeypatch, tmp_path):
+    """Census không khớp thì dừng trước khi dựng mô hình, mã 1."""
+    html_path = tmp_path / "wabo.html"
+    html_path.write_text(FAKE_HTML, encoding="utf-8")
+    census = tmp_path / "census.json"
+    census.write_text(
+        json.dumps(
+            {
+                "0": {
+                    "grounded_pairs": {},
+                    "n_pair_sentence_combos": 0,
+                    "n_grounded_pairs": 0,
+                },
+                "1": {
+                    "grounded_pairs": {},
+                    "n_pair_sentence_combos": 0,
+                    "n_grounded_pairs": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_wabo_document",
+        lambda path, mapping: _fake_document_grounded(),
+    )
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.load_bpic_traces",
+        lambda cache_dir: _traces_aanvraag_roi_ontwerp(30),
+    )
+    built: list[bool] = []
+    monkeypatch.setattr(
+        "praxon_core.learning.wabo_rules.build_reflector",
+        lambda settings, seed, max_tokens=None: built.append(True),
+    )
+    code = main(
+        [
+            "--html",
+            str(html_path),
+            "--cache-dir",
+            str(tmp_path),
+            "--census",
+            str(census),
+        ]
+    )
+    assert code == 1
+    assert built == []
