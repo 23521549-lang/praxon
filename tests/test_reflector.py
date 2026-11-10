@@ -15,7 +15,7 @@ import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Never
 from uuid import UUID, uuid4
 
 import httpx2
@@ -56,11 +56,14 @@ from praxon_core.learning.reflector import (
     DOCUMENT_ONE_RULE_NOTE,
     DOCUMENT_PROMPT_VERSION,
     DOCUMENT_RULES_NOTE,
+    GroundedCallResult,
     Reflector,
     ReflectorBatchError,
     _document_prompt,
     _filter_rules_by_source_quote,
+    _grounded_document_prompt,
     _one_rule_key,
+    _term_in_text,
     _trace_batch_prompt,
     reflector_from_settings,
 )
@@ -1181,3 +1184,183 @@ def test_reflect_document_once_tai_lieu_rong_khong_goi_mo_hinh():
     assert result.insights == ()
     assert excluded == ("response(aanvraag, besluit)",)
     assert model.calls == []
+
+
+def _grounded_combos() -> list[tuple[tuple[str, str, str], str]]:
+    """Hai combo có căn cứ giả cho test reflect_document_grounded."""
+    return [
+        (("precedence", "aanvraag", "besluit"), "De aanvraag leidt tot het besluit."),
+        (("response", "besluit", "aanvraag"), "Het besluit volgt op de aanvraag."),
+    ]
+
+
+_GROUNDED_CHUNK = "De aanvraag leidt tot het besluit. Het besluit volgt op de aanvraag."
+
+
+def _grounded_rule_json(template: str, activation: str, target: str, source: str) -> str:
+    return json.dumps(
+        {
+            "rules": [
+                {
+                    "template": template,
+                    "activation": activation,
+                    "target": target,
+                    "source": source,
+                }
+            ]
+        }
+    )
+
+
+def test_reflect_document_grounded_giu_luat_trong_enum():
+    """Luật trong enum qua lọc trích dẫn + cổng căn cứ, cặp bị xóa khỏi tập cho phép."""
+    model = _StubModel(
+        _grounded_rule_json(
+            "precedence",
+            "aanvraag",
+            "besluit",
+            "De aanvraag leidt tot het besluit.",
+        )
+    )
+    reflector = Reflector(model, seed=42, max_tokens=2000)
+    outcome = reflector.reflect_document_grounded(_GROUNDED_CHUNK, (), _grounded_combos())
+    assert isinstance(outcome, GroundedCallResult)
+    assert len(outcome.result.insights) == 1
+    insight = outcome.result.insights[0]
+    assert (insight.template, insight.activation, insight.target) == (
+        "precedence",
+        "aanvraag",
+        "besluit",
+    )
+    assert len(outcome.kept_rules) == 1
+    assert outcome.kept_rules[0].source == "De aanvraag leidt tot het besluit."
+    assert outcome.remaining == (
+        (("response", "besluit", "aanvraag"), "Het besluit volgt op de aanvraag."),
+    )
+    assert outcome.grounding_dropped == 0
+    assert outcome.empty is False
+    assert DOCUMENT_EXCLUSION_INTRO not in model.prompts[0]
+    assert DOCUMENT_ONE_RULE_NOTE in model.prompts[0]
+
+
+def test_reflect_document_grounded_tra_rong_giu_nguyen_tap_cho_phep():
+    """Mô hình trả rỗng: không insight, tập cho phép không đổi, empty=True."""
+    model = _StubModel(json.dumps({"rules": []}))
+    reflector = Reflector(model, seed=42)
+    outcome = reflector.reflect_document_grounded(_GROUNDED_CHUNK, (), _grounded_combos())
+    assert outcome.result.insights == ()
+    assert outcome.kept_rules == ()
+    assert outcome.remaining == tuple(_grounded_combos())
+    assert outcome.empty is True
+
+
+def test_reflect_document_grounded_trich_dan_khong_khop_bi_loai_nhung_cap_van_bi_xoa():
+    """Trích dẫn không khớp đoạn thì luật bị loại nhưng cặp vẫn bị xóa (đã dùng)."""
+    model = _StubModel(
+        _grounded_rule_json(
+            "precedence",
+            "aanvraag",
+            "besluit",
+            "De aanvraag leidt tot het besluit.",
+        )
+    )
+    reflector = Reflector(model, seed=42)
+    outcome = reflector.reflect_document_grounded(
+        "Het besluit valt. Niets anders.", (), _grounded_combos()
+    )
+    assert outcome.result.insights == ()
+    assert outcome.result.source_quote_dropped == 1
+    assert outcome.kept_rules == ()
+    assert len(outcome.remaining) == 1
+
+
+def test_reflect_document_grounded_khong_can_cu_bi_loai():
+    """Trích dẫn khớp đoạn nhưng thiếu một khái niệm thì cổng căn cứ loại."""
+    combos = [(("precedence", "aanvraag", "besluit"), "De aanvraag wordt ingediend.")]
+    chunk = "De aanvraag wordt ingediend. Het besluit valt."
+    model = _StubModel(
+        _grounded_rule_json("precedence", "aanvraag", "besluit", "De aanvraag wordt ingediend.")
+    )
+    reflector = Reflector(model, seed=42)
+    outcome = reflector.reflect_document_grounded(chunk, (), combos)
+    assert outcome.result.insights == ()
+    assert outcome.grounding_dropped == 1
+    assert outcome.kept_rules == ()
+    assert outcome.remaining == ()
+
+
+def test_reflect_document_grounded_ngoai_enum_bao_loi():
+    """Luật ngoài enum thì parse từ chối -> ReflectorBatchError (lỗi grammar)."""
+    model = _StubModel(
+        _grounded_rule_json(
+            "precedence", "aanvraag", "besluit", "Câu nguồn bịa, không nằm trong enum."
+        )
+    )
+    reflector = Reflector(model, seed=42)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect_document_grounded(_GROUNDED_CHUNK, (), _grounded_combos())
+
+
+def test_reflect_document_grounded_tap_can_khong_goi_model():
+    """Tập cho phép cạn: trả rỗng, không gọi mô hình."""
+    model = _StubModel(json.dumps({"rules": []}))
+    reflector = Reflector(model, seed=42)
+    outcome = reflector.reflect_document_grounded(_GROUNDED_CHUNK, (), [])
+    assert outcome.result.insights == ()
+    assert outcome.remaining == ()
+    assert model.prompts == []
+
+
+def test_reflect_document_grounded_tai_lieu_rong_khong_goi_model():
+    model = _StubModel(json.dumps({"rules": []}))
+    reflector = Reflector(model, seed=42)
+    outcome = reflector.reflect_document_grounded("   ", (), _grounded_combos())
+    assert outcome.result.insights == ()
+    assert model.prompts == []
+
+
+def test_reflect_document_grounded_loi_model_bao_loi():
+    """Gọi mô hình hỏng thì ReflectorBatchError, không trả luật nửa vời."""
+
+    class _FailingModel:
+        def complete(
+            self,
+            prompt: str,
+            *,
+            json_schema: Mapping[str, Any] | None = None,
+            temperature: float = 0.0,
+            seed: int | None = None,
+            max_tokens: int | None = None,
+        ) -> Never:
+            raise ModelCallError("lỗi giả")
+
+    reflector = Reflector(_FailingModel(), seed=42)
+    with pytest.raises(ReflectorBatchError):
+        reflector.reflect_document_grounded(_GROUNDED_CHUNK, (), _grounded_combos())
+
+
+def test_term_in_text_dong_y_voi_is_grounded():
+    """Matcher của Reflector đồng ý với wabo_rules.is_grounded trên cùng bộ ca."""
+    from praxon_core.learning.wabo_rules import is_grounded
+
+    terms = ["aanvraag", "besluit", "ter inzage"]
+    cases = [
+        ("aanvraag", "besluit", "De aanvraag leidt tot het besluit."),
+        ("aanvraag", "besluit", "De aanvraag wordt ingediend."),
+        ("aanvraag", "besluit", "Het besluit valt."),
+        ("aanvraag", "ter inzage", "De aanvraag ligt ter inzage."),
+        ("aanvraag", "besluit", "De aanvragen leiden tot besluiten."),
+        ("aanvraag", "besluit", "AANVRAAG en BESLUIT."),
+    ]
+    for activation, target, quote in cases:
+        expected = is_grounded(activation, target, quote, terms)
+        got = _term_in_text(activation, quote) and _term_in_text(target, quote)
+        assert got == expected, (activation, target, quote)
+
+
+def test_grounded_document_prompt_khong_co_loai_tru():
+    """Prompt grounded là prompt một luật, không có đoạn loại trừ."""
+    prompt = _grounded_document_prompt(_GROUNDED_CHUNK, ())
+    assert DOCUMENT_ONE_RULE_NOTE in prompt
+    assert DOCUMENT_EXCLUSION_INTRO not in prompt
+    assert _GROUNDED_CHUNK in prompt

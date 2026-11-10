@@ -22,6 +22,7 @@ from praxon_core.learning.declare_schema import (
     Condition,
     DeclareRule,
     ReflectorOutputError,
+    grounded_combo_output_schema,
     parse_reflector_output,
     validate_reflector_output,
 )
@@ -406,3 +407,77 @@ def test_document_schema_max_rules_khong_hop_le_thi_loi(max_rules):
 
     with pytest.raises(ValueError, match="max_rules phải >= 1"):
         document_output_schema(max_rules=max_rules)
+
+
+def _grounded_combos() -> list[tuple[tuple[str, str, str], str]]:
+    """Hai combo có căn cứ giả (một cặp, hai câu nguồn khác nhau)."""
+    return [
+        (("precedence", "aanvraag", "besluit"), "De aanvraag leidt tot het besluit."),
+        (("precedence", "aanvraag", "besluit"), "Na de aanvraag volgt het besluit."),
+        (("response", "besluit", "aanvraag"), "Het besluit volgt op de aanvraag."),
+    ]
+
+
+def test_grounded_combo_schema_parse_dung_luat_trong_enum():
+    """H3: enum object tách trường parse được bằng parse_reflector_output."""
+    schema = grounded_combo_output_schema(_grounded_combos())
+    text = json.dumps(
+        {
+            "rules": [
+                {
+                    "template": "precedence",
+                    "activation": "aanvraag",
+                    "target": "besluit",
+                    "source": "De aanvraag leidt tot het besluit.",
+                }
+            ]
+        }
+    )
+    rules = parse_reflector_output(text, schema=schema)
+    assert len(rules) == 1
+    assert rules[0] == DeclareRule(
+        template="precedence",
+        activation="aanvraag",
+        target="besluit",
+        source="De aanvraag leidt tot het besluit.",
+    )
+
+
+def test_grounded_combo_schema_tu_choi_luat_ngoai_enum():
+    """Luật không nằm trong enum (sai câu nguồn) thì parse từ chối."""
+    schema = grounded_combo_output_schema(_grounded_combos())
+    text = json.dumps(
+        {
+            "rules": [
+                {
+                    "template": "precedence",
+                    "activation": "aanvraag",
+                    "target": "besluit",
+                    "source": "Câu nguồn bịa, không nằm trong enum.",
+                }
+            ]
+        }
+    )
+    with pytest.raises(ReflectorOutputError):
+        parse_reflector_output(text, schema=schema)
+
+
+def test_grounded_combo_schema_rong_hop_le():
+    """Mô hình trả rỗng (không luật nào) vẫn hợp lệ với schema enum."""
+    schema = grounded_combo_output_schema(_grounded_combos())
+    assert parse_reflector_output(json.dumps({"rules": []}), schema=schema) == []
+
+
+def test_grounded_combo_schema_khong_combo_bao_loi():
+    """Enum rỗng báo lỗi ngay — server từ chối schema enum rỗng (400)."""
+    with pytest.raises(ValueError, match="ít nhất một combo"):
+        grounded_combo_output_schema([])
+
+
+def test_grounded_combo_schema_json_serializable():
+    """Schema enum serialize được thành JSON xác định (để gửi cho server)."""
+    schema = grounded_combo_output_schema(_grounded_combos())
+    first = json.dumps(schema, sort_keys=True)
+    second = json.dumps(schema, sort_keys=True)
+    assert first == second
+    assert len(schema["properties"]["rules"]["items"]["enum"]) == 3

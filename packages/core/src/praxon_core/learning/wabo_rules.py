@@ -85,7 +85,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from praxon_core.adapters.language_model import ModelCallError, model_from_settings
 from praxon_core.datasets.bpic2015 import BPIC2015_DATASETS
@@ -96,9 +96,14 @@ from praxon_core.learning.beta import Prior, posterior_prob_ge
 from praxon_core.learning.calibration import count_rule_evidence
 from praxon_core.learning.coordinator import ReflectorResult
 from praxon_core.learning.curator import FactRead, Insight
+from praxon_core.learning.declare_schema import DeclareRule, GroundedCombo
 from praxon_core.learning.dutch_mapping import DutchMappingTable, default_dutch_mapping
 from praxon_core.learning.payload import statement_for
-from praxon_core.learning.reflector import Reflector, ReflectorBatchError
+from praxon_core.learning.reflector import (
+    GroundedCallResult,
+    Reflector,
+    ReflectorBatchError,
+)
 from praxon_core.learning.rules import Policy, default_rule_table
 from praxon_core.repositories.facts import FactRow
 from praxon_core.settings import Settings, load_settings
@@ -110,17 +115,26 @@ __all__ = [
     "WaboDocument",
     "WaboExtraction",
     "WaboRuleOutcome",
+    "assert_grounded_census",
     "build_reflector",
     "extract_wabo_rules",
     "extract_wabo_text",
     "format_wabo_report",
+    "grounded_combo_indices",
+    "grounded_combos",
+    "grounded_pairs_for_chunk",
+    "is_grounded",
     "load_bpic_traces",
     "load_wabo_document",
     "main",
+    "matched_terms",
+    "pair_key",
     "parse_valid_during",
     "resolve_activity",
     "split_chunk_at_article",
+    "split_sentences",
     "split_wabo_text",
+    "write_doc_law_file",
 ]
 
 WABO_DEFAULT_HTML_FILENAME = "wabo-2015-01-01.html"
@@ -166,6 +180,7 @@ class WaboExtraction:
     tokens_in: int
     tokens_out: int
     self_loop_dropped: int = 0
+    zero_grounded_chunks: int | None = None
 
     @property
     def accepted(self) -> int:
@@ -362,6 +377,136 @@ def resolve_activity(text: str, mapping: DutchMappingTable) -> str | None:
     return None
 
 
+#: Thứ tự mẫu khi liệt kê combo có căn cứ: precedence trước, response sau.
+#: Phải khớp thứ tự thí nghiệm loop-back v2 (không dùng TIER_1_TEMPLATES,
+#: vốn là ("response", "precedence") theo ADR) để tái tạo đúng 12/15/15
+#: khi kiểm port (bước 5) — thứ tự enum ảnh hưởng luật mô hình chọn.
+_GROUNDED_TEMPLATE_ORDER: tuple[str, ...] = ("precedence", "response")
+
+_TERM_PATTERNS: dict[str, re.Pattern[str]] = {}
+
+
+def _term_pattern(term: str) -> re.Pattern[str]:
+    """Mẫu regex word-boundary cho một khái niệm (như S1/S2/S6)."""
+    pattern = _TERM_PATTERNS.get(term)
+    if pattern is None:
+        pattern = re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
+        _TERM_PATTERNS[term] = pattern
+    return pattern
+
+
+def matched_terms(sentence: str, terms: Sequence[str]) -> list[str]:
+    """Khái niệm trong bảng mapping xuất hiện trong câu (khớp chuỗi)."""
+    return [term for term in terms if _term_pattern(term).search(sentence)]
+
+
+def is_grounded(activation: str, target: str, quote: str, terms: Sequence[str]) -> bool:
+    """Cổng kiểm căn cứ R1: cả hai khái niệm phải có trong trích dẫn."""
+    present = matched_terms(quote, terms)
+    return activation in present and target in present
+
+
+def pair_key(template: str, activation: str, target: str) -> str:
+    """Một cặp cho phép dạng chuỗi duy nhất, vd "precedence(aanvraag, besluit)"."""
+    return f"{template}({activation}, {target})"
+
+
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'\(\[])")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Tách đoạn thành câu: ranh giới tổng quát, không quy tắc riêng ngôn ngữ."""
+    out: list[str] = []
+    for para in text.split("\n\n"):
+        para = " ".join(para.split())
+        if not para:
+            continue
+        for piece in _SENT_SPLIT_RE.split(para):
+            piece = piece.strip()
+            if piece:
+                out.append(piece)
+    return out
+
+
+def grounded_combo_indices(
+    chunk: str, terms: Sequence[str]
+) -> list[tuple[tuple[str, str, str], int]]:
+    """Tổ hợp (cặp, chỉ số câu) có căn cứ của một đoạn, theo thứ tự cố định.
+
+    Thứ tự: mẫu (precedence trước), activation theo thứ tự bảng mapping,
+    target theo thứ tự bảng mapping, rồi chỉ số câu. Dùng chỉ số câu
+    (không phải văn bản câu) để đối chiếu với file kiểm toán — văn bản
+    câu có thể trùng nhau trong một đoạn.
+    """
+    sentences = split_sentences(chunk)
+    sent_terms = [set(matched_terms(sentence, terms)) for sentence in sentences]
+    out: list[tuple[tuple[str, str, str], int]] = []
+    for template in _GROUNDED_TEMPLATE_ORDER:
+        for activation in terms:
+            for target in terms:
+                if activation == target:
+                    continue
+                for index, present in enumerate(sent_terms):
+                    if activation in present and target in present:
+                        out.append(((template, activation, target), index))
+    return out
+
+
+def grounded_combos(chunk: str, terms: Sequence[str]) -> list[GroundedCombo]:
+    """Mọi tổ hợp (cặp, câu) có căn cứ của một đoạn, theo thứ tự cố định.
+
+    Một tổ hợp có căn cứ khi câu đó chứa cả hai khái niệm của cặp
+    (khớp word-boundary, không phân biệt hoa/thường) — đúng định nghĩa
+    cổng vòng 1. Kết quả phải khớp file kiểm toán
+    `loopback-r2-grounded-pairs.json` (assert ở `assert_grounded_census`).
+    """
+    sentences = split_sentences(chunk)
+    return [(pair, sentences[index]) for pair, index in grounded_combo_indices(chunk, terms)]
+
+
+def grounded_pairs_for_chunk(chunk: str, terms: Sequence[str]) -> list[tuple[str, str, str]]:
+    """Cặp có căn cứ của một đoạn (không trùng), cùng thứ tự như `grounded_combos`."""
+    seen: list[tuple[str, str, str]] = []
+    for pair, _sentence in grounded_combos(chunk, terms):
+        if pair not in seen:
+            seen.append(pair)
+    return seen
+
+
+def assert_grounded_census(
+    chunks: Sequence[str], terms: Sequence[str], census_path: Path
+) -> None:
+    """Kiểm tập combo/cặp có căn cứ khớp CHÍNH XÁC file kiểm toán.
+
+    Chạy trước bất kỳ lần gọi mô hình nào (như thí nghiệm loop-back v2):
+    nếu code port tính khác thí nghiệm thì dừng ngay, không chạy. File
+    kiểm toán là `loopback-r2-grounded-pairs.json` (52 đoạn).
+    """
+    census = json.loads(census_path.read_text(encoding="utf-8"))
+    for index, chunk in enumerate(chunks):
+        combos = grounded_combo_indices(chunk, terms)
+        by_pair: dict[str, list[int]] = {}
+        for pair, sent_index in combos:
+            by_pair.setdefault(pair_key(*pair), []).append(sent_index)
+        try:
+            entry = census[str(index)]
+            entry_pairs = entry["grounded_pairs"]
+            entry_combos = entry["n_pair_sentence_combos"]
+            entry_n_pairs = entry["n_grounded_pairs"]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"file kiểm toán thiếu/sai dạng ở đoạn {index}: {exc}") from exc
+        if (
+            by_pair != entry_pairs
+            or len(combos) != entry_combos
+            or len(by_pair) != entry_n_pairs
+        ):
+            raise ValueError(
+                f"tập tổ hợp đoạn {index} lệch file kiểm toán: tính "
+                f"{len(by_pair)} cặp / {len(combos)} tổ hợp, file ghi "
+                f"{entry_n_pairs} cặp / {entry_combos} tổ hợp"
+            )
+
+
 @dataclass(frozen=True)
 class _LoadedChunk:
     """Một đoạn đã nạp từ file JSONL: insights + token đã ghi."""
@@ -371,6 +516,7 @@ class _LoadedChunk:
     tokens_out: int
     source_quote_dropped: int = 0
     self_loop_dropped: int = 0
+    grounded_pairs: int | None = None
 
 
 def _write_chunk_line(
@@ -379,8 +525,22 @@ def _write_chunk_line(
     chunk_index: int,
     chunk: str,
     result: ReflectorResult,
+    grounded_pairs: int | None = None,
+    n_combos: int | None = None,
+    grounded_rules: Sequence[DeclareRule] | None = None,
+    n_calls: int | None = None,
+    grounding_dropped: int | None = None,
+    calls: Sequence[dict[str, Any]] | None = None,
 ) -> None:
-    """Ghi một dòng JSONL cho đoạn vừa xong, rồi flush + fsync ngay."""
+    """Ghi một dòng JSONL cho đoạn vừa xong, rồi flush + fsync ngay.
+
+    Ở chế độ grounded, ghi thêm số cặp có căn cứ, số combo và luật
+    giữ kèm trích dẫn nguồn (để kiểm bước 5 đọc từ file, không cần
+    trạng thái trong bộ nhớ) + diễn biến từng lần gọi (`calls`, theo
+    thứ tự gọi: `{"kept": luật}` / `{"dropped": "quote"|"grounding"}` /
+    `{"empty": true}`) để kiểm bước 5 cắt đúng 15 lần gọi đầu khi tái
+    lập 12/15/15 từ lần chạy không giới hạn.
+    """
     line = {
         "chunk_index": chunk_index,
         "chunk_chars": len(chunk),
@@ -391,6 +551,26 @@ def _write_chunk_line(
         "source_quote_dropped": result.source_quote_dropped,
         "self_loop_dropped": result.self_loop_dropped,
     }
+    if grounded_pairs is not None:
+        line["grounded_pairs"] = grounded_pairs
+    if n_combos is not None:
+        line["n_combos"] = n_combos
+    if grounded_rules is not None:
+        line["grounded_rules"] = [
+            {
+                "template": rule.template,
+                "activation": rule.activation,
+                "target": rule.target,
+                "source": rule.source,
+            }
+            for rule in grounded_rules
+        ]
+    if n_calls is not None:
+        line["n_calls"] = n_calls
+    if grounding_dropped is not None:
+        line["grounding_dropped"] = grounding_dropped
+    if calls is not None:
+        line["calls"] = list(calls)
     handle.write(json.dumps(line, ensure_ascii=False) + "\n")
     handle.flush()
     os.fsync(handle.fileno())
@@ -430,6 +610,11 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             tokens_out = data["tokens_out"]
             dropped = data.get("source_quote_dropped", 0)
             self_loop_dropped = data.get("self_loop_dropped", 0)
+            grounded_pairs = data.get("grounded_pairs")
+            if grounded_pairs is not None and (
+                type(grounded_pairs) is not int or grounded_pairs < 0
+            ):
+                raise ValueError("grounded_pairs không phải số nguyên không âm")
             if type(index) is not int or index != expected:
                 raise ValueError(f"chunk_index {index!r} khác đoạn chờ {expected}")
             if index >= len(chunks):
@@ -461,6 +646,7 @@ def _load_chunk_lines(path: Path, chunks: Sequence[str]) -> dict[int, _LoadedChu
             tokens_out=tokens_out,
             source_quote_dropped=dropped,
             self_loop_dropped=self_loop_dropped,
+            grounded_pairs=grounded_pairs,
         )
     return loaded
 
@@ -528,6 +714,109 @@ def _extract_chunk_one_rule(
     )
 
 
+@dataclass(frozen=True)
+class _GroundedChunkResult:
+    """Kết quả một đoạn ở chế độ grounded: gộp ReflectorResult + luật giữ + số đếm.
+
+    `calls` là diễn biến từng lần gọi theo thứ tự (để kiểm bước 5 cắt
+    đúng 15 lần gọi đầu): mỗi phần tử là `{"kept": luật}` /
+    `{"dropped": "quote"|"grounding"}` / `{"empty": true}`.
+    """
+
+    result: ReflectorResult
+    pairs: tuple[tuple[str, str, str], ...]
+    n_combos: int
+    kept_rules: tuple[DeclareRule, ...]
+    grounding_dropped: int
+    calls: tuple[dict[str, Any], ...]
+
+
+def _extract_chunk_grounded(
+    grounded_reflect: Callable[
+        [str, Sequence[FactRead], Sequence[GroundedCombo]],
+        GroundedCallResult,
+    ],
+    chunk: str,
+    terms: Sequence[str],
+    *,
+    max_grounded_calls: int | None = None,
+) -> _GroundedChunkResult:
+    """Một đoạn ở chế độ grounded (A2-full): lặp gọi mô hình trên tập cho phép.
+
+    Mỗi lần gọi tối đa một luật; cặp vừa trả bị xóa khỏi tập cho phép
+    kể cả khi luật bị lọc bỏ; mô hình trả rỗng thì thử lại đúng một
+    lần rồi dừng; tập cho phép cạn thì dừng. `max_grounded_calls` chỉ
+    để kiểm chứng (tái lập 12/15/15 với cap 15) — mặc định None là
+    không giới hạn. Luật vòng tự thân không xảy ra ở chế độ này theo
+    cấu trúc (cặp luôn có activation khác target), nên không cần cổng
+    riêng như chế độ một luật.
+    """
+    pairs = grounded_pairs_for_chunk(chunk, terms)
+    combos = grounded_combos(chunk, terms)
+    remaining = tuple(combos)
+    insights: list[Insight] = []
+    kept_rules: list[DeclareRule] = []
+    calls: list[dict[str, Any]] = []
+    tokens_in = 0
+    tokens_out = 0
+    quote_dropped = 0
+    grounding_dropped = 0
+    empty_streak = 0
+    calls_made = 0
+    while remaining:
+        if max_grounded_calls is not None and calls_made >= max_grounded_calls:
+            break
+        outcome = grounded_reflect(chunk, (), remaining)
+        calls_made += 1
+        tokens_in += outcome.result.tokens_in
+        tokens_out += outcome.result.tokens_out
+        quote_dropped += outcome.result.source_quote_dropped
+        grounding_dropped += outcome.grounding_dropped
+        remaining = outcome.remaining
+        if outcome.empty:
+            calls.append({"empty": True})
+            empty_streak += 1
+            if empty_streak >= 2:
+                break
+            continue
+        empty_streak = 0
+        if outcome.kept_rules:
+            rule = outcome.kept_rules[0]
+            calls.append(
+                {
+                    "kept": {
+                        "template": rule.template,
+                        "activation": rule.activation,
+                        "target": rule.target,
+                        "source": rule.source,
+                    }
+                }
+            )
+            insights.extend(outcome.result.insights)
+            kept_rules.extend(outcome.kept_rules)
+        elif outcome.result.source_quote_dropped:
+            calls.append({"dropped": "quote"})
+        elif outcome.grounding_dropped:
+            calls.append({"dropped": "grounding"})
+        else:
+            raise RuntimeError(
+                "luật grounded trả về nhưng không giữ cũng không bị loại (bất biến nội bộ vỡ)"
+            )
+    return _GroundedChunkResult(
+        result=ReflectorResult(
+            insights=tuple(insights),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            source_quote_dropped=quote_dropped,
+        ),
+        pairs=tuple(pairs),
+        n_combos=len(combos),
+        kept_rules=tuple(kept_rules),
+        grounding_dropped=grounding_dropped,
+        calls=tuple(calls),
+    )
+
+
 def extract_wabo_rules(
     *,
     reflect_document: Callable[[str, Sequence[FactRead]], ReflectorResult],
@@ -547,6 +836,13 @@ def extract_wabo_rules(
         tuple[ReflectorResult, tuple[str, ...]],
     ]
     | None = None,
+    grounded: bool = False,
+    max_grounded_calls: int | None = None,
+    reflect_document_grounded: Callable[
+        [str, Sequence[FactRead], Sequence[GroundedCombo]],
+        GroundedCallResult,
+    ]
+    | None = None,
 ) -> WaboExtraction:
     """Trích luật thứ tự từ Wabo: Reflector -> gắn khái niệm -> cổng Beta.
 
@@ -564,6 +860,10 @@ def extract_wabo_rules(
     `one_rule` thì mỗi đoạn trích bằng chế độ một luật (lần thử 6, 9.1):
     lặp tối đa `max_one_rule_calls` lần gọi qua `reflect_document_one_rule`
     (bắt buộc phải truyền khi bật); luật vòng tự thân bị bỏ và đếm riêng.
+    `grounded` thì mỗi đoạn trích bằng chế độ có căn cứ (A2-full, 9.1):
+    chỉ hỏi các cặp có căn cứ của đoạn qua `reflect_document_grounded`
+    (bắt buộc phải truyền khi bật); `max_grounded_calls` giới hạn số
+    lần gọi mỗi đoạn (mặc định không giới hạn; 15 để tái lập 12/15/15).
     """
     if limit_chunks is not None and limit_chunks < 1:
         raise ValueError(f"limit_chunks phải >= 1, nhận {limit_chunks}")
@@ -574,6 +874,12 @@ def extract_wabo_rules(
         raise ValueError("one_rule cần reflect_document_one_rule")
     if max_one_rule_calls < 1:
         raise ValueError(f"max_one_rule_calls phải >= 1, nhận {max_one_rule_calls}")
+    grounded_fn = reflect_document_grounded
+    if grounded and grounded_fn is None:
+        raise ValueError("grounded cần reflect_document_grounded")
+    if max_grounded_calls is not None and max_grounded_calls < 1:
+        raise ValueError(f"max_grounded_calls phải >= 1, nhận {max_grounded_calls}")
+    terms = [entry.term for entry in mapping.concept]
     chunks = split_wabo_text(document.text)
     if split_chunk is not None and split_chunk_at is not None:
         chunks = _split_named_chunk(chunks, index=split_chunk, marker=split_chunk_at)
@@ -585,6 +891,7 @@ def extract_wabo_rules(
     tokens_out = 0
     source_quote_dropped = 0
     self_loop_dropped = 0
+    zero_grounded = 0
     with ExitStack() as stack:
         handle = (
             stack.enter_context(open(chunks_out, "a", encoding="utf-8"))
@@ -599,8 +906,21 @@ def extract_wabo_rules(
                 tokens_out += loaded.tokens_out
                 source_quote_dropped += loaded.source_quote_dropped
                 self_loop_dropped += loaded.self_loop_dropped
+                if grounded and loaded.grounded_pairs == 0:
+                    zero_grounded += 1
                 continue
-            if one_rule and one_rule_fn is not None:
+            grounded_info: _GroundedChunkResult | None = None
+            if grounded and grounded_fn is not None:
+                grounded_info = _extract_chunk_grounded(
+                    grounded_fn,
+                    chunk,
+                    terms,
+                    max_grounded_calls=max_grounded_calls,
+                )
+                result = grounded_info.result
+                if not grounded_info.pairs:
+                    zero_grounded += 1
+            elif one_rule and one_rule_fn is not None:
                 result = _extract_chunk_one_rule(
                     one_rule_fn,
                     chunk,
@@ -615,7 +935,24 @@ def extract_wabo_rules(
             source_quote_dropped += result.source_quote_dropped
             self_loop_dropped += result.self_loop_dropped
             if handle is not None:
-                _write_chunk_line(handle, chunk_index=index, chunk=chunk, result=result)
+                _write_chunk_line(
+                    handle,
+                    chunk_index=index,
+                    chunk=chunk,
+                    result=result,
+                    grounded_pairs=(
+                        len(grounded_info.pairs) if grounded_info is not None else None
+                    ),
+                    n_combos=grounded_info.n_combos if grounded_info is not None else None,
+                    grounded_rules=(
+                        grounded_info.kept_rules if grounded_info is not None else None
+                    ),
+                    n_calls=len(grounded_info.calls) if grounded_info is not None else None,
+                    grounding_dropped=(
+                        grounded_info.grounding_dropped if grounded_info is not None else None
+                    ),
+                    calls=grounded_info.calls if grounded_info is not None else None,
+                )
     seen: set[tuple[str, str, str, str | None]] = set()
     unique: list[Insight] = []
     for insight in insights:
@@ -699,6 +1036,7 @@ def extract_wabo_rules(
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         self_loop_dropped=self_loop_dropped,
+        zero_grounded_chunks=zero_grounded if grounded else None,
     )
 
 
@@ -730,6 +1068,8 @@ def format_wabo_report(extraction: WaboExtraction) -> str:
         f"Chấp nhận vào global: {extraction.accepted} luật",
         f"Token: vào {extraction.tokens_in}, ra {extraction.tokens_out}",
     ]
+    if extraction.zero_grounded_chunks is not None:
+        lines.append(f"Đoạn có 0 cặp có căn cứ: {extraction.zero_grounded_chunks} đoạn")
     for outcome in extraction.outcomes:
         if outcome.accepted:
             lines.append(
@@ -737,6 +1077,45 @@ def format_wabo_report(extraction: WaboExtraction) -> str:
                 f"{outcome.trials}, P={outcome.posterior:.4f}"
             )
     return "\n".join(lines)
+
+
+def write_doc_law_file(
+    path: Path,
+    *,
+    rules: Sequence[str],
+    model_id: str,
+    model_revision: str,
+    extracted_at: str,
+    seed: int,
+    beta_support: float,
+    beta_confidence: float,
+    beta_promote_probability: float,
+    beta_prior_confidence: float,
+    n_rules_extracted: int,
+    n_rules_gated: int,
+) -> None:
+    """Viết file luật tài liệu đúng định dạng driver đọc (`_read_doc_law_file`).
+
+    Đầu mục `# key: value` (gồm `model_id`/`model_revision` khớp lock)
+    + một khóa luật mỗi dòng, **sắp xếp, duy nhất** — đúng như driver
+    yêu cầu (khóa chưa sắp xếp hoặc trùng thì driver từ chối cả file).
+    Khóa lấy từ `canonical_key` của luật đã qua cổng Beta.
+    """
+    keys = sorted(set(rules))
+    lines = [
+        f"# model_id: {model_id}",
+        f"# model_revision: {model_revision}",
+        f"# extracted_at: {extracted_at}",
+        f"# seed: {seed}",
+        f"# beta_support: {beta_support}",
+        f"# beta_confidence: {beta_confidence}",
+        f"# beta_promote_probability: {beta_promote_probability}",
+        f"# beta_prior_confidence: {beta_prior_confidence}",
+        f"# n_rules_extracted: {n_rules_extracted}",
+        f"# n_rules_gated: {n_rules_gated}",
+        *keys,
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def build_reflector(
@@ -826,6 +1205,32 @@ def main(argv: list[str] | None = None) -> int:
         help="số lần gọi tối đa mỗi đoạn ở chế độ một luật (mặc định 8)",
     )
     parser.add_argument(
+        "--grounded",
+        action="store_true",
+        help="chế độ có căn cứ (A2-full, 9.1): mỗi đoạn chỉ hỏi các cặp "
+        "có căn cứ, không giới hạn số lần gọi (cùng --max-grounded-calls)",
+    )
+    parser.add_argument(
+        "--max-grounded-calls",
+        type=int,
+        default=None,
+        help="số lần gọi tối đa mỗi đoạn ở chế độ grounded (mặc định: "
+        "không giới hạn; 15 để tái lập 12/15/15)",
+    )
+    parser.add_argument(
+        "--write-law-file",
+        type=Path,
+        default=None,
+        help="ghi luật đã qua cổng Beta ra file luật tài liệu (mặc định: không ghi)",
+    )
+    parser.add_argument(
+        "--census",
+        type=Path,
+        default=None,
+        help="kiểm tập combo/cặp có căn cứ khớp file kiểm toán trước khi "
+        "gọi mô hình (mặc định: không kiểm)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -847,6 +1252,13 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"lỗi dữ liệu: {exc}", file=sys.stderr)
         return 1
+    if args.census is not None:
+        try:
+            terms = [entry.term for entry in mapping.concept]
+            assert_grounded_census(split_wabo_text(document.text), terms, args.census)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"lỗi kiểm toán: {exc}", file=sys.stderr)
+            return 1
     policy = default_rule_table().policy
     try:
         reflector = build_reflector(settings, seed=args.seed, max_tokens=args.max_tokens)
@@ -854,6 +1266,9 @@ def main(argv: list[str] | None = None) -> int:
             reflect_document=reflector.reflect_document,
             reflect_document_one_rule=(
                 reflector.reflect_document_once if args.one_rule else None
+            ),
+            reflect_document_grounded=(
+                reflector.reflect_document_grounded if args.grounded else None
             ),
             document=document,
             mapping=mapping,
@@ -866,11 +1281,34 @@ def main(argv: list[str] | None = None) -> int:
             split_chunk_at=args.split_at,
             one_rule=args.one_rule,
             max_one_rule_calls=args.max_one_rule_calls,
+            grounded=args.grounded,
+            max_grounded_calls=args.max_grounded_calls,
         )
     except (ModelCallError, ReflectorBatchError) as exc:
         print(f"lỗi mô hình: {exc}", file=sys.stderr)
         return 2
     print(format_wabo_report(extraction))
+    if args.write_law_file is not None:
+        write_doc_law_file(
+            args.write_law_file,
+            rules=[
+                outcome.rule.canonical_key
+                for outcome in extraction.outcomes
+                if outcome.accepted
+            ],
+            model_id=settings.model_id,
+            model_revision=settings.model_revision,
+            extracted_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            seed=args.seed,
+            # Cổng Beta không có ngưỡng support (chỉ hậu nghiệm >= ngưỡng
+            # lên) nên đầu mục ghi 0.0 như file luật hiện tại.
+            beta_support=0.0,
+            beta_confidence=policy.confidence_threshold,
+            beta_promote_probability=policy.promote_probability,
+            beta_prior_confidence=WABO_PRIOR_CONFIDENCE,
+            n_rules_extracted=extraction.extracted,
+            n_rules_gated=extraction.accepted,
+        )
     return 0
 
 

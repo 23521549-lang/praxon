@@ -53,7 +53,9 @@ Quyết định thiết kế (ghi rõ để review):
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from praxon_core.adapters.language_model import LanguageModel, ModelCallError
@@ -62,14 +64,17 @@ from praxon_core.learning.curator import FactRead, Insight, InsightSource
 from praxon_core.learning.declare_schema import (
     DECLARE_OUTPUT_SCHEMA,
     DeclareRule,
+    GroundedCombo,
     ReflectorOutputError,
     document_output_schema,
+    grounded_combo_output_schema,
     parse_reflector_output,
 )
 from praxon_core.learning.generator import Trajectory
 from praxon_core.settings import Settings
 
 __all__ = [
+    "GroundedCallResult",
     "Reflector",
     "ReflectorBatchError",
     "reflector_from_settings",
@@ -83,6 +88,25 @@ class ReflectorBatchError(RuntimeError):
     không dùng luật nửa vời (spec dòng 219, task 6.4). Nguyên nhân gốc nằm
     trong `__cause__` (`ModelCallError` hoặc `ReflectorOutputError`).
     """
+
+
+@dataclass(frozen=True)
+class GroundedCallResult:
+    """Kết quả một lần gọi grounded (A2-full, 9.1): luật giữ + tập cho phép còn lại.
+
+    `result` là kết quả chuẩn của Reflector (0/1 insight, token, số luật
+    bị lọc trích dẫn); `kept_rules` là luật giữ sau lọc trích dẫn + cổng
+    căn cứ, kèm trích dẫn nguồn (để bên gọi ghi JSONL và kiểm C8);
+    `remaining` là combo cho phép còn lại (đã xóa mọi combo của cặp vừa
+    trả — một cặp chỉ giữ tối đa một lần); `grounding_dropped` đếm luật
+    bị cổng căn cứ loại; `empty` là mô hình trả rỗng (không luật nào).
+    """
+
+    result: ReflectorResult
+    kept_rules: tuple[DeclareRule, ...]
+    remaining: tuple[GroundedCombo, ...]
+    grounding_dropped: int
+    empty: bool
 
 
 class Reflector:
@@ -242,6 +266,87 @@ class Reflector:
                 source_quote_dropped=dropped,
             ),
             updated,
+        )
+
+    def reflect_document_grounded(
+        self,
+        document_text: str,
+        facts: Sequence[FactRead],
+        allowed_combos: Sequence[GroundedCombo],
+        *,
+        scope: str = "global",
+    ) -> GroundedCallResult:
+        """Một lần gọi mô hình cho tài liệu, chế độ có căn cứ (A2-full, 9.1).
+
+        `allowed_combos` là các tổ hợp (cặp, câu nguồn) có căn cứ của đoạn
+        — schema enum chỉ cho mô hình chọn đúng một combo trong danh sách
+        (không tự đặt trích dẫn). Trả tối đa một luật: parse bằng
+        `parse_reflector_output` với schema enum (luật ngoài enum thì
+        `ReflectorBatchError` — grammar có lỗi thực thi, lộ ngay, không
+        im lặng bỏ); luật qua lọc trích dẫn nguồn rồi cổng căn cứ R1
+        (cả hai khái niệm phải có trong chính trích dẫn) mới thành
+        insight. Cặp vừa trả bị xóa khỏi tập cho phép — kể cả khi luật
+        bị lọc bỏ (mô hình đã sinh ra nó, lần sau không lặp lại).
+        Tài liệu rỗng hoặc tập cho phép cạn thì trả rỗng, không gọi mô
+        hình (enum rỗng bị server từ chối 400 — het_cap, không phải lỗi).
+        """
+        allowed = tuple(allowed_combos)
+        empty_result = ReflectorResult(insights=(), tokens_in=0, tokens_out=0)
+        if not document_text.strip() or not allowed:
+            return GroundedCallResult(
+                result=empty_result,
+                kept_rules=(),
+                remaining=allowed,
+                grounding_dropped=0,
+                empty=False,
+            )
+        schema = grounded_combo_output_schema(allowed)
+        rules, tokens_in, tokens_out = self._call_model(
+            _grounded_document_prompt(document_text, facts),
+            json_schema=schema,
+        )
+        if not rules:
+            return GroundedCallResult(
+                result=ReflectorResult(insights=(), tokens_in=tokens_in, tokens_out=tokens_out),
+                kept_rules=(),
+                remaining=allowed,
+                grounding_dropped=0,
+                empty=True,
+            )
+        rule = rules[0]
+        combo: GroundedCombo = ((rule.template, rule.activation, rule.target), rule.source)
+        remaining = tuple(c for c in allowed if c[0] != combo[0])
+        if combo not in allowed:
+            raise ReflectorBatchError(
+                f"luật grounded ngoài tập cho phép (lỗi grammar): {combo[0]}"
+            )
+        kept, dropped = _filter_rules_by_source_quote([rule], document_text)
+        grounding_dropped = 0
+        kept_rules: tuple[DeclareRule, ...] = ()
+        if kept:
+            if _term_in_text(rule.activation, rule.source) and _term_in_text(
+                rule.target, rule.source
+            ):
+                kept_rules = (rule,)
+            else:
+                grounding_dropped = 1
+        insights = _rules_to_insights(
+            kept_rules,
+            source=InsightSource.DOCUMENT,
+            scope=scope,
+            cap=self._max_insights_per_batch,
+        )
+        return GroundedCallResult(
+            result=ReflectorResult(
+                insights=insights,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                source_quote_dropped=dropped,
+            ),
+            kept_rules=kept_rules,
+            remaining=remaining,
+            grounding_dropped=grounding_dropped,
+            empty=False,
         )
 
     def _call_model(
@@ -439,6 +544,34 @@ def _document_prompt(
         ]
     )
     return "\n".join(lines)
+
+
+def _grounded_document_prompt(
+    document_text: str,
+    facts: Sequence[FactRead],
+) -> str:
+    """Prompt một luật có căn cứ: như `_document_prompt` một luật, không loại trừ.
+
+    Loại trừ KHÔNG nằm trong prompt — chỉ sống trong grammar (enum combo),
+    đây là điểm cô lập cơ chế của S4. Ví dụ mẫu giữ nguyên v6
+    (`DOCUMENT_FEW_SHOT_EXAMPLES`, đã ở dạng tách trường) vì enum schema
+    phát object {template, activation, target, source} trực tiếp (H3) —
+    không cần định dạng lại ví dụ sang dạng "pair" như thí nghiệm.
+    Định dạng object do schema enum ép (GBNF), không cần dòng mô tả
+    format riêng trong prompt.
+    """
+    return _document_prompt(document_text, facts, one_rule=True)
+
+
+def _term_in_text(term: str, text: str) -> bool:
+    """Khái niệm xuất hiện word-boundary trong text (lưới an toàn cổng R1).
+
+    Cùng định nghĩa với `wabo_rules.is_grounded` (cả hai khái niệm phải
+    có trong trích dẫn) — nhưng Reflector không import `wabo_rules`
+    (import vòng: `wabo_rules` import Reflector), nên matcher sống ở
+    đây và test bắt hai bên phải đồng ý trên cùng bộ ca.
+    """
+    return re.search(r"\b" + re.escape(term) + r"\b", text, re.IGNORECASE) is not None
 
 
 def _normalize_source_quote(text: str) -> str:
