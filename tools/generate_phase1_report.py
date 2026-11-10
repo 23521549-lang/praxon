@@ -827,7 +827,7 @@ def _render_data(
     lines.append("")
     lines.append("## 4. Luật Wabo (9.1)")
     lines.append("")
-    lines.append(_missing_line("", "9.1 đo thật (đang chạy trong sandbox Docker)"))
+    lines.append(_missing_line("", "9.1 đo thật"))
     lines.append("")
     lines.append("## 5. Hiệu chỉnh cổng Beta (9.6)")
     lines.append("")
@@ -1066,9 +1066,14 @@ def main(argv: list[str] | None = None) -> int:
     ]
     # B1.5 chưa có lệnh sinh — mục này luôn CHƯA CÓ cho tới khi tìm được lệnh.
     missing.append(next(entry for entry in MAPPING if entry.id == "B1.5"))
-    # B2.2/B2.3/B2.4/B2.5 chưa có đầu vào — luôn CHƯA CÓ cho tới khi có
-    # lệnh/lần chạy/lệnh khóa tương ứng.
-    missing.extend(entry for entry in MAPPING if entry.id in {"B2.2", "B2.3", "B2.4", "B2.5"})
+    # B2.2/B2.3/B2.4 chưa có đầu vào — luôn CHƯA CÓ cho tới khi có
+    # lệnh/lần chạy tương ứng.
+    missing.extend(entry for entry in MAPPING if entry.id in {"B2.2", "B2.3", "B2.4"})
+    # B2.5 chỉ CHƯA CÓ khi chưa có lock 12.1 — đã khóa thì §1 hiện commit
+    # khóa + config_hash nên B2.5 rời danh sách thiếu.
+    lock_commit, _lock_hash = _read_lock(repo_root)
+    if lock_commit is None:
+        missing.append(next(entry for entry in MAPPING if entry.id == "B2.5"))
     missing.sort(key=lambda entry: entry.id)
 
     parsed: dict[str, object] = {}

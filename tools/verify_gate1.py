@@ -3,7 +3,7 @@
 Đọc `docs/plans/phase-1-core/bao-cao-cong-1-evidence.json` rồi kiểm:
 
 - hình thức: đủ sáu điều kiện C1-C6, verdict chỉ DAT/CHUA_DU/CHUA_KIEM,
-  mỗi điều kiện có lệnh hoặc run ID/URL, C4 ghi cả hai số 21 (plan/spec)
+  mỗi điều kiện có lệnh hoặc run ID/URL, C4 ghi 25 (plan/spec)
   và 25 (file test đo được);
 - đo lại tại chỗ: C4 (chạy `tests/integration/test_invariants.py`),
   C6 (ba file test của ba nền móng), C5-local (11 cổng máy) — số đo được
@@ -149,10 +149,10 @@ def check_structure(evidence: dict[str, Any]) -> list[str]:
                     errors.append(f"{want}: báo cáo FINAL mà {field} còn chỗ trống {value!r}")
     c4 = _find_condition(conditions, "C4")
     if c4 is not None:
-        if c4.get("plan_number") != 21:
+        if c4.get("plan_number") != 25:
             errors.append(
-                f"C4: plan_number đang là {c4.get('plan_number')!r}, phải là 21 "
-                "(plan/spec nói 21 phép tấn công)"
+                f"C4: plan_number đang là {c4.get('plan_number')!r}, phải là 25 "
+                "(plan/spec nói 25 phép tấn công)"
             )
         if c4.get("measured_number") != 25:
             errors.append(
