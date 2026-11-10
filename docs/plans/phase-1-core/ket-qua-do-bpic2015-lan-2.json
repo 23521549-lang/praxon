@@ -1,0 +1,1207 @@
+{
+  "task": "12.2",
+  "measured_at": "2026-11-10T09:00:50.745713+00:00",
+  "code_commit": "583274e5fbd5f6f120f5d23c050f460f1e321efc",
+  "config_hash": "13e98fec4a6088cf30b63c1efea594460193be605efaf957eb5d548d4a225f20",
+  "data_hash": "6564b2e2ef6cbc7e18606ac74940931d59c5adb517572d9f943578fbfcf58783",
+  "seed": 0,
+  "model_id": "Qwen/Qwen3-8B-GGUF",
+  "model_revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+  "document_rules": 22,
+  "document_base_condition": "Phân tầng đồng thuận",
+  "published": true,
+  "wall_time_seconds": 78.3,
+  "note": "Điều kiện 1 (Chỉ Declare) và điều kiện 2 (Cách ly) cho cùng số: cùng khám phá Declare trên trace của tenant, chưa có kho global để cách ly loại ra. Điều kiện 7 lấy nền tốt hơn trong hai điều kiện phân tầng theo F1 trung bình: Phân tầng đồng thuận. Tập luật tài liệu có 22 luật (trích 115, qua cổng trên phần học 22); mô hình Qwen/Qwen3-8B-GGUF@7c41481f57cb95916b40956ab2f0b139b296d974; chạy lại với --allow-rerun: có.",
+  "rows": [
+    {
+      "tenant_id": "m1",
+      "condition": "Chỉ Declare",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 732,
+      "metrics": {
+        "precision": {
+          "value": 0.40437158469945356,
+          "lower": 0.3702185792349727,
+          "upper": 0.4385245901639344
+        },
+        "recall": {
+          "value": 0.17109826589595376,
+          "lower": 0.1531791907514451,
+          "upper": 0.18959537572254334
+        },
+        "violation_rate": {
+          "value": 0.4576502732240437,
+          "lower": 0.42213114754098363,
+          "upper": 0.49453551912568305
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "4eef0202-f0cc-4e42-8432-6a9a7eab14cc",
+      "status": "succeeded",
+      "wall_time": 0.8706910749999679
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Cách ly",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 732,
+      "metrics": {
+        "precision": {
+          "value": 0.40437158469945356,
+          "lower": 0.3702185792349727,
+          "upper": 0.4385245901639344
+        },
+        "recall": {
+          "value": 0.17109826589595376,
+          "lower": 0.1531791907514451,
+          "upper": 0.18959537572254334
+        },
+        "violation_rate": {
+          "value": 0.4576502732240437,
+          "lower": 0.42213114754098363,
+          "upper": 0.49453551912568305
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "df8cd01c-2cfe-4dcc-bc03-b6bdb774792f",
+      "status": "succeeded",
+      "wall_time": 0.0
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Gộp chung",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 738,
+      "metrics": {
+        "precision": {
+          "value": 0.38482384823848237,
+          "lower": 0.3523035230352303,
+          "upper": 0.4186991869918699
+        },
+        "recall": {
+          "value": 0.16416184971098266,
+          "lower": 0.14739884393063585,
+          "upper": 0.18323699421965317
+        },
+        "violation_rate": {
+          "value": 0.44850948509485095,
+          "lower": 0.4146341463414634,
+          "upper": 0.48644986449864497
+        },
+        "negative_transfer": {
+          "value": 0.44850948509485095,
+          "lower": 0.4146341463414634,
+          "upper": 0.4823848238482385
+        }
+      },
+      "run_id": "b9e96f9c-d963-4790-94ba-2baa8afe9e1d",
+      "status": "succeeded",
+      "wall_time": 0.679098311999951
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Phân tầng bỏ phiếu",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 1545,
+      "metrics": {
+        "precision": {
+          "value": 0.3844660194174757,
+          "lower": 0.36245954692556637,
+          "upper": 0.4084142394822006
+        },
+        "recall": {
+          "value": 0.17572254335260115,
+          "lower": 0.15838150289017341,
+          "upper": 0.19421965317919074
+        },
+        "violation_rate": {
+          "value": 0.455663430420712,
+          "lower": 0.43042071197411,
+          "upper": 0.48220064724919093
+        },
+        "negative_transfer": {
+          "value": 0.23883495145631067,
+          "lower": 0.2181229773462783,
+          "upper": 0.26019417475728157
+        }
+      },
+      "run_id": "bd752b0c-f66e-40ec-a3d2-680c62b30453",
+      "status": "succeeded",
+      "wall_time": 1.1129807570000594
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Phân tầng đồng thuận",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 1096,
+      "metrics": {
+        "precision": {
+          "value": 0.4041970802919708,
+          "lower": 0.3740875912408759,
+          "upper": 0.4324817518248175
+        },
+        "recall": {
+          "value": 0.18092485549132947,
+          "lower": 0.1630057803468208,
+          "upper": 0.2
+        },
+        "violation_rate": {
+          "value": 0.3476277372262774,
+          "lower": 0.3193430656934307,
+          "upper": 0.3777372262773723
+        },
+        "negative_transfer": {
+          "value": 0.041970802919708027,
+          "lower": 0.03102189781021898,
+          "upper": 0.05474452554744526
+        }
+      },
+      "run_id": "c6968408-905d-4707-a290-3b9e6adfb948",
+      "status": "succeeded",
+      "wall_time": 0.8877339480000046
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Phân tầng phủ quyết",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 1191,
+      "metrics": {
+        "precision": {
+          "value": 0.41141897565071367,
+          "lower": 0.38455079764903444,
+          "upper": 0.4357682619647355
+        },
+        "recall": {
+          "value": 0.17341040462427745,
+          "lower": 0.15433526011560694,
+          "upper": 0.19190751445086704
+        },
+        "violation_rate": {
+          "value": 0.3778337531486146,
+          "lower": 0.3501259445843829,
+          "upper": 0.40554156171284633
+        },
+        "negative_transfer": {
+          "value": 0.09655751469353484,
+          "lower": 0.07976490344248531,
+          "upper": 0.11418975650713686
+        }
+      },
+      "run_id": "c5c80fdf-999c-4a44-bd05-e7d0cad7c3c4",
+      "status": "succeeded",
+      "wall_time": 0.9162302600000203
+    },
+    {
+      "tenant_id": "m1",
+      "condition": "Tài liệu cộng dữ liệu",
+      "source": "bpic2015-test-split",
+      "n_train": 719,
+      "n_measure": 240,
+      "n_reference": 1730,
+      "n_rules": 1118,
+      "metrics": {
+        "precision": {
+          "value": 0.39892665474060823,
+          "lower": 0.37209302325581395,
+          "upper": 0.4284436493738819
+        },
+        "recall": {
+          "value": 0.1815028901734104,
+          "lower": 0.16358381502890174,
+          "upper": 0.20173410404624278
+        },
+        "violation_rate": {
+          "value": 0.3425760286225403,
+          "lower": 0.315742397137746,
+          "upper": 0.370304114490161
+        },
+        "negative_transfer": {
+          "value": 0.04293381037567084,
+          "lower": 0.03130590339892665,
+          "upper": 0.055456171735241505
+        }
+      },
+      "run_id": "34f26fcf-f967-40df-b097-b5a837a3548e",
+      "status": "succeeded",
+      "wall_time": 0.91501907199995
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Chỉ Declare",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 932,
+      "metrics": {
+        "precision": {
+          "value": 0.47746781115879827,
+          "lower": 0.44742489270386265,
+          "upper": 0.5107296137339056
+        },
+        "recall": {
+          "value": 0.17893043827905106,
+          "lower": 0.1640530759951749,
+          "upper": 0.1942098914354644
+        },
+        "violation_rate": {
+          "value": 0.43991416309012876,
+          "lower": 0.40987124463519314,
+          "upper": 0.47532188841201717
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "a91e64a8-8254-427b-808a-62c7e95bcdf5",
+      "status": "succeeded",
+      "wall_time": 1.13959277999993
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Cách ly",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 932,
+      "metrics": {
+        "precision": {
+          "value": 0.47746781115879827,
+          "lower": 0.44742489270386265,
+          "upper": 0.5107296137339056
+        },
+        "recall": {
+          "value": 0.17893043827905106,
+          "lower": 0.1640530759951749,
+          "upper": 0.1942098914354644
+        },
+        "violation_rate": {
+          "value": 0.43991416309012876,
+          "lower": 0.40987124463519314,
+          "upper": 0.47532188841201717
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "d69ffc80-f801-4ed0-aafb-15027f34743b",
+      "status": "succeeded",
+      "wall_time": 0.0
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Gộp chung",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 738,
+      "metrics": {
+        "precision": {
+          "value": 0.3875338753387534,
+          "lower": 0.3509485094850949,
+          "upper": 0.4241192411924119
+        },
+        "recall": {
+          "value": 0.11499798954563731,
+          "lower": 0.10253317249698432,
+          "upper": 0.12746280659429032
+        },
+        "violation_rate": {
+          "value": 0.43766937669376693,
+          "lower": 0.4051490514905149,
+          "upper": 0.47289972899729
+        },
+        "negative_transfer": {
+          "value": 0.43766937669376693,
+          "lower": 0.4010840108401084,
+          "upper": 0.47289972899729
+        }
+      },
+      "run_id": "d767f27b-f16d-4b48-a719-2891796bdcfc",
+      "status": "succeeded",
+      "wall_time": 0.7386098599999968
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Phân tầng bỏ phiếu",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 1745,
+      "metrics": {
+        "precision": {
+          "value": 0.44183381088825213,
+          "lower": 0.4183381088825215,
+          "upper": 0.4659025787965616
+        },
+        "recall": {
+          "value": 0.17893043827905106,
+          "lower": 0.1652593486127865,
+          "upper": 0.19300361881785283
+        },
+        "violation_rate": {
+          "value": 0.43896848137535815,
+          "lower": 0.41489971346704874,
+          "upper": 0.46303724928366763
+        },
+        "negative_transfer": {
+          "value": 0.20401146131805156,
+          "lower": 0.18681948424068767,
+          "upper": 0.22349570200573066
+        }
+      },
+      "run_id": "1428af2b-6cbe-4ab6-bccc-438bd9eae103",
+      "status": "succeeded",
+      "wall_time": 1.1593266040001708
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Phân tầng đồng thuận",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 1296,
+      "metrics": {
+        "precision": {
+          "value": 0.49228395061728397,
+          "lower": 0.466820987654321,
+          "upper": 0.5169753086419753
+        },
+        "recall": {
+          "value": 0.17893043827905106,
+          "lower": 0.16485725774024929,
+          "upper": 0.19340570969039003
+        },
+        "violation_rate": {
+          "value": 0.345679012345679,
+          "lower": 0.32098765432098764,
+          "upper": 0.36959876543209874
+        },
+        "negative_transfer": {
+          "value": 0.029320987654320986,
+          "lower": 0.020833333333333332,
+          "upper": 0.038580246913580245
+        }
+      },
+      "run_id": "cdd6a89d-7395-4079-976e-6c9292140992",
+      "status": "succeeded",
+      "wall_time": 0.9623743839999861
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Phân tầng phủ quyết",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 1362,
+      "metrics": {
+        "precision": {
+          "value": 0.46402349486049926,
+          "lower": 0.43612334801762115,
+          "upper": 0.4911894273127753
+        },
+        "recall": {
+          "value": 0.17893043827905106,
+          "lower": 0.1644551668677121,
+          "upper": 0.1946119823080016
+        },
+        "violation_rate": {
+          "value": 0.3619676945668135,
+          "lower": 0.3340675477239354,
+          "upper": 0.3891336270190896
+        },
+        "negative_transfer": {
+          "value": 0.06093979441997063,
+          "lower": 0.04919236417033774,
+          "upper": 0.07415565345080763
+        }
+      },
+      "run_id": "531b30e0-be95-4f7e-b9bc-ca9d1127c209",
+      "status": "succeeded",
+      "wall_time": 0.9796407430001182
+    },
+    {
+      "tenant_id": "m2",
+      "condition": "Tài liệu cộng dữ liệu",
+      "source": "bpic2015-test-split",
+      "n_train": 499,
+      "n_measure": 167,
+      "n_reference": 2487,
+      "n_rules": 1318,
+      "metrics": {
+        "precision": {
+          "value": 0.48861911987860396,
+          "lower": 0.4620637329286798,
+          "upper": 0.5159332321699545
+        },
+        "recall": {
+          "value": 0.17973462002412546,
+          "lower": 0.1644551668677121,
+          "upper": 0.19340570969039003
+        },
+        "violation_rate": {
+          "value": 0.34142640364188165,
+          "lower": 0.3148710166919575,
+          "upper": 0.36646433990895294
+        },
+        "negative_transfer": {
+          "value": 0.030349013657056147,
+          "lower": 0.022003034901365705,
+          "upper": 0.04021244309559939
+        }
+      },
+      "run_id": "57bdb422-02c2-43f2-95c8-dec1a97d3675",
+      "status": "succeeded",
+      "wall_time": 0.9824785250000332
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Chỉ Declare",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 664,
+      "metrics": {
+        "precision": {
+          "value": 0.45180722891566266,
+          "lower": 0.411144578313253,
+          "upper": 0.4894578313253012
+        },
+        "recall": {
+          "value": 0.1892744479495268,
+          "lower": 0.17034700315457413,
+          "upper": 0.20946372239747635
+        },
+        "violation_rate": {
+          "value": 0.45331325301204817,
+          "lower": 0.4126506024096386,
+          "upper": 0.49096385542168675
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "baebbc88-61f3-44d9-8f1b-a417412f1be5",
+      "status": "succeeded",
+      "wall_time": 0.6535547539999698
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Cách ly",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 664,
+      "metrics": {
+        "precision": {
+          "value": 0.45180722891566266,
+          "lower": 0.411144578313253,
+          "upper": 0.4894578313253012
+        },
+        "recall": {
+          "value": 0.1892744479495268,
+          "lower": 0.17034700315457413,
+          "upper": 0.20946372239747635
+        },
+        "violation_rate": {
+          "value": 0.45331325301204817,
+          "lower": 0.4126506024096386,
+          "upper": 0.49096385542168675
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "ef31713d-d1ce-46f0-beae-0f765368cbaf",
+      "status": "succeeded",
+      "wall_time": 0.0
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Gộp chung",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 738,
+      "metrics": {
+        "precision": {
+          "value": 0.3875338753387534,
+          "lower": 0.34959349593495936,
+          "upper": 0.42140921409214094
+        },
+        "recall": {
+          "value": 0.1804416403785489,
+          "lower": 0.16214511041009463,
+          "upper": 0.20063091482649842
+        },
+        "violation_rate": {
+          "value": 0.43360433604336046,
+          "lower": 0.3997289972899729,
+          "upper": 0.470189701897019
+        },
+        "negative_transfer": {
+          "value": 0.43360433604336046,
+          "lower": 0.3970189701897019,
+          "upper": 0.470189701897019
+        }
+      },
+      "run_id": "85bcba15-f760-49dc-9116-419ddeefd373",
+      "status": "succeeded",
+      "wall_time": 0.7044214600000487
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Phân tầng bỏ phiếu",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 1477,
+      "metrics": {
+        "precision": {
+          "value": 0.4062288422477996,
+          "lower": 0.3818551117129316,
+          "upper": 0.43263371699390657
+        },
+        "recall": {
+          "value": 0.1892744479495268,
+          "lower": 0.17034700315457413,
+          "upper": 0.2088328075709779
+        },
+        "violation_rate": {
+          "value": 0.44211238997968855,
+          "lower": 0.4177386594448206,
+          "upper": 0.46784021665538256
+        },
+        "negative_transfer": {
+          "value": 0.23832092078537576,
+          "lower": 0.2166553825321598,
+          "upper": 0.26134055517941773
+        }
+      },
+      "run_id": "81748872-a954-47ad-a83c-69f25f8a7212",
+      "status": "succeeded",
+      "wall_time": 1.1882099580000158
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Phân tầng đồng thuận",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 1028,
+      "metrics": {
+        "precision": {
+          "value": 0.43287937743190663,
+          "lower": 0.4046692607003891,
+          "upper": 0.46206225680933855
+        },
+        "recall": {
+          "value": 0.1974763406940063,
+          "lower": 0.17791798107255521,
+          "upper": 0.21577287066246056
+        },
+        "violation_rate": {
+          "value": 0.32587548638132297,
+          "lower": 0.29571984435797666,
+          "upper": 0.3540856031128405
+        },
+        "negative_transfer": {
+          "value": 0.033073929961089495,
+          "lower": 0.02237354085603113,
+          "upper": 0.04474708171206226
+        }
+      },
+      "run_id": "6f09ae27-f3af-4c5a-b8da-6d7a747aadb2",
+      "status": "succeeded",
+      "wall_time": 0.8599165539999376
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Phân tầng phủ quyết",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 1098,
+      "metrics": {
+        "precision": {
+          "value": 0.4444444444444444,
+          "lower": 0.41530054644808745,
+          "upper": 0.4744990892531876
+        },
+        "recall": {
+          "value": 0.1892744479495268,
+          "lower": 0.17097791798107256,
+          "upper": 0.2088328075709779
+        },
+        "violation_rate": {
+          "value": 0.3324225865209472,
+          "lower": 0.30510018214936246,
+          "upper": 0.35974499089253187
+        },
+        "negative_transfer": {
+          "value": 0.058287795992714025,
+          "lower": 0.044626593806921674,
+          "upper": 0.07285974499089254
+        }
+      },
+      "run_id": "98a4d6f1-60cd-40bd-a737-9a0697d8b6df",
+      "status": "succeeded",
+      "wall_time": 0.9289721340001051
+    },
+    {
+      "tenant_id": "m3",
+      "condition": "Tài liệu cộng dữ liệu",
+      "source": "bpic2015-test-split",
+      "n_train": 846,
+      "n_measure": 282,
+      "n_reference": 1585,
+      "n_rules": 1050,
+      "metrics": {
+        "precision": {
+          "value": 0.4276190476190476,
+          "lower": 0.4,
+          "upper": 0.4580952380952381
+        },
+        "recall": {
+          "value": 0.19873817034700317,
+          "lower": 0.17665615141955837,
+          "upper": 0.21829652996845425
+        },
+        "violation_rate": {
+          "value": 0.32095238095238093,
+          "lower": 0.2904761904761905,
+          "upper": 0.3504761904761905
+        },
+        "negative_transfer": {
+          "value": 0.03428571428571429,
+          "lower": 0.023809523809523808,
+          "upper": 0.045714285714285714
+        }
+      },
+      "run_id": "76cbe2d4-1183-47d7-94e3-3478ee7642e9",
+      "status": "succeeded",
+      "wall_time": 0.8923955180000576
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Chỉ Declare",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 744,
+      "metrics": {
+        "precision": {
+          "value": 0.4112903225806452,
+          "lower": 0.375,
+          "upper": 0.44623655913978494
+        },
+        "recall": {
+          "value": 0.2070365358592693,
+          "lower": 0.18606224627875506,
+          "upper": 0.2273342354533153
+        },
+        "violation_rate": {
+          "value": 0.4260752688172043,
+          "lower": 0.38844086021505375,
+          "upper": 0.4650537634408602
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "f7eb9f1c-23b6-4aaf-bd86-6debcdd5c7b4",
+      "status": "succeeded",
+      "wall_time": 0.6485891970000921
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Cách ly",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 744,
+      "metrics": {
+        "precision": {
+          "value": 0.4112903225806452,
+          "lower": 0.375,
+          "upper": 0.44623655913978494
+        },
+        "recall": {
+          "value": 0.2070365358592693,
+          "lower": 0.18606224627875506,
+          "upper": 0.2273342354533153
+        },
+        "violation_rate": {
+          "value": 0.4260752688172043,
+          "lower": 0.38844086021505375,
+          "upper": 0.4650537634408602
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "eea3513b-81bf-460c-b19d-a1aaaba3fa08",
+      "status": "succeeded",
+      "wall_time": 0.0
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Gộp chung",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 738,
+      "metrics": {
+        "precision": {
+          "value": 0.3902439024390244,
+          "lower": 0.35365853658536583,
+          "upper": 0.4268292682926829
+        },
+        "recall": {
+          "value": 0.19485791610284167,
+          "lower": 0.17523680649526388,
+          "upper": 0.2165087956698241
+        },
+        "violation_rate": {
+          "value": 0.44037940379403795,
+          "lower": 0.4078590785907859,
+          "upper": 0.47560975609756095
+        },
+        "negative_transfer": {
+          "value": 0.44037940379403795,
+          "lower": 0.4065040650406504,
+          "upper": 0.47696476964769646
+        }
+      },
+      "run_id": "cbd8a783-f31a-4a1d-a691-c7644833ca6b",
+      "status": "succeeded",
+      "wall_time": 0.6188045200001397
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Phân tầng bỏ phiếu",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 1557,
+      "metrics": {
+        "precision": {
+          "value": 0.3827874116891458,
+          "lower": 0.3590237636480411,
+          "upper": 0.40783558124598585
+        },
+        "recall": {
+          "value": 0.2070365358592693,
+          "lower": 0.1880920162381597,
+          "upper": 0.2293640054127199
+        },
+        "violation_rate": {
+          "value": 0.4277456647398844,
+          "lower": 0.4046242774566474,
+          "upper": 0.45343609505459215
+        },
+        "negative_transfer": {
+          "value": 0.2241490044958253,
+          "lower": 0.20423892100192678,
+          "upper": 0.24470134874759153
+        }
+      },
+      "run_id": "52eac9b7-1251-4598-8257-a5461217603d",
+      "status": "succeeded",
+      "wall_time": 1.0524462430000767
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Phân tầng đồng thuận",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 1108,
+      "metrics": {
+        "precision": {
+          "value": 0.40703971119133575,
+          "lower": 0.37906137184115524,
+          "upper": 0.4368231046931408
+        },
+        "recall": {
+          "value": 0.2165087956698241,
+          "lower": 0.19621109607577808,
+          "upper": 0.2381596752368065
+        },
+        "violation_rate": {
+          "value": 0.315884476534296,
+          "lower": 0.2897111913357401,
+          "upper": 0.34296028880866425
+        },
+        "negative_transfer": {
+          "value": 0.029783393501805054,
+          "lower": 0.02075812274368231,
+          "upper": 0.04061371841155235
+        }
+      },
+      "run_id": "76da74f1-3e26-4165-92c6-0858082d6e7d",
+      "status": "succeeded",
+      "wall_time": 0.8152767300000505
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Phân tầng phủ quyết",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 1175,
+      "metrics": {
+        "precision": {
+          "value": 0.414468085106383,
+          "lower": 0.38893617021276594,
+          "upper": 0.4408510638297872
+        },
+        "recall": {
+          "value": 0.2070365358592693,
+          "lower": 0.18673883626522328,
+          "upper": 0.22665764546684708
+        },
+        "violation_rate": {
+          "value": 0.31829787234042556,
+          "lower": 0.2919148936170213,
+          "upper": 0.345531914893617
+        },
+        "negative_transfer": {
+          "value": 0.04851063829787234,
+          "lower": 0.0374468085106383,
+          "upper": 0.06042553191489362
+        }
+      },
+      "run_id": "40eae7d9-ee7d-4853-896a-32181ba7639e",
+      "status": "succeeded",
+      "wall_time": 0.8489812430000256
+    },
+    {
+      "tenant_id": "m4",
+      "condition": "Tài liệu cộng dữ liệu",
+      "source": "bpic2015-test-split",
+      "n_train": 631,
+      "n_measure": 211,
+      "n_reference": 1478,
+      "n_rules": 1130,
+      "metrics": {
+        "precision": {
+          "value": 0.4026548672566372,
+          "lower": 0.37610619469026546,
+          "upper": 0.431858407079646
+        },
+        "recall": {
+          "value": 0.2178619756427605,
+          "lower": 0.1975642760487145,
+          "upper": 0.2381596752368065
+        },
+        "violation_rate": {
+          "value": 0.31150442477876106,
+          "lower": 0.2849557522123894,
+          "upper": 0.33716814159292036
+        },
+        "negative_transfer": {
+          "value": 0.030973451327433628,
+          "lower": 0.022123893805309734,
+          "upper": 0.04070796460176991
+        }
+      },
+      "run_id": "23a497ea-c272-48fc-a7f4-f8289b0cb840",
+      "status": "succeeded",
+      "wall_time": 0.8637252440000793
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Chỉ Declare",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1064,
+      "metrics": {
+        "precision": {
+          "value": 0.287593984962406,
+          "lower": 0.26033834586466165,
+          "upper": 0.31390977443609025
+        },
+        "recall": {
+          "value": 0.15912636505460218,
+          "lower": 0.14248569942797712,
+          "upper": 0.1747269890795632
+        },
+        "violation_rate": {
+          "value": 0.41353383458646614,
+          "lower": 0.38345864661654133,
+          "upper": 0.44548872180451127
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "30591814-ed9b-4c83-8d23-bde07833b211",
+      "status": "succeeded",
+      "wall_time": 0.8639949690000321
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Cách ly",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1064,
+      "metrics": {
+        "precision": {
+          "value": 0.287593984962406,
+          "lower": 0.26033834586466165,
+          "upper": 0.31390977443609025
+        },
+        "recall": {
+          "value": 0.15912636505460218,
+          "lower": 0.14248569942797712,
+          "upper": 0.1747269890795632
+        },
+        "violation_rate": {
+          "value": 0.41353383458646614,
+          "lower": 0.38345864661654133,
+          "upper": 0.44548872180451127
+        },
+        "negative_transfer": {
+          "value": 0.0,
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      },
+      "run_id": "0b5cd3d6-4b1e-4627-a805-700b42610071",
+      "status": "succeeded",
+      "wall_time": 0.0
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Gộp chung",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 738,
+      "metrics": {
+        "precision": {
+          "value": 0.3875338753387534,
+          "lower": 0.35501355013550134,
+          "upper": 0.42140921409214094
+        },
+        "recall": {
+          "value": 0.14872594903796152,
+          "lower": 0.13364534581383256,
+          "upper": 0.16588663546541862
+        },
+        "violation_rate": {
+          "value": 0.4065040650406504,
+          "lower": 0.3712737127371274,
+          "upper": 0.4444444444444444
+        },
+        "negative_transfer": {
+          "value": 0.4065040650406504,
+          "lower": 0.3685636856368564,
+          "upper": 0.43902439024390244
+        }
+      },
+      "run_id": "0be05d1a-6f58-460e-a84a-709c4f8a2733",
+      "status": "succeeded",
+      "wall_time": 0.7642460480001319
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Phân tầng bỏ phiếu",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1877,
+      "metrics": {
+        "precision": {
+          "value": 0.322855620671284,
+          "lower": 0.30207778369738947,
+          "upper": 0.34469898774640384
+        },
+        "recall": {
+          "value": 0.16016640665626625,
+          "lower": 0.14456578263130526,
+          "upper": 0.17784711388455537
+        },
+        "violation_rate": {
+          "value": 0.41342567927543955,
+          "lower": 0.39211507725093236,
+          "upper": 0.4358018114011721
+        },
+        "negative_transfer": {
+          "value": 0.17900905700586042,
+          "lower": 0.161427810335642,
+          "upper": 0.19659030367607885
+        }
+      },
+      "run_id": "3be5bbce-272f-4402-aadd-5b8205049cb0",
+      "status": "succeeded",
+      "wall_time": 1.3100868289998289
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Phân tầng đồng thuận",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1428,
+      "metrics": {
+        "precision": {
+          "value": 0.3165266106442577,
+          "lower": 0.2913165266106443,
+          "upper": 0.34173669467787116
+        },
+        "recall": {
+          "value": 0.16640665626625065,
+          "lower": 0.15080603224128966,
+          "upper": 0.1830473218928757
+        },
+        "violation_rate": {
+          "value": 0.33123249299719887,
+          "lower": 0.3067226890756303,
+          "upper": 0.3557422969187675
+        },
+        "negative_transfer": {
+          "value": 0.023109243697478993,
+          "lower": 0.015406162464985995,
+          "upper": 0.03081232492997199
+        }
+      },
+      "run_id": "0c1e06f5-7834-4f02-919a-ca72e4c9a6c4",
+      "status": "succeeded",
+      "wall_time": 1.0757351959998687
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Phân tầng phủ quyết",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1518,
+      "metrics": {
+        "precision": {
+          "value": 0.33201581027667987,
+          "lower": 0.30632411067193677,
+          "upper": 0.35507246376811596
+        },
+        "recall": {
+          "value": 0.15912636505460218,
+          "lower": 0.1435257410296412,
+          "upper": 0.1747269890795632
+        },
+        "violation_rate": {
+          "value": 0.34189723320158105,
+          "lower": 0.3181818181818182,
+          "upper": 0.36561264822134387
+        },
+        "negative_transfer": {
+          "value": 0.05204216073781291,
+          "lower": 0.041501976284584984,
+          "upper": 0.06324110671936758
+        }
+      },
+      "run_id": "9ef6d9aa-476c-4e06-9628-ffeecdd1f2ca",
+      "status": "succeeded",
+      "wall_time": 1.1233206849999533
+    },
+    {
+      "tenant_id": "m5",
+      "condition": "Tài liệu cộng dữ liệu",
+      "source": "bpic2015-test-split",
+      "n_train": 694,
+      "n_measure": 232,
+      "n_reference": 1923,
+      "n_rules": 1450,
+      "metrics": {
+        "precision": {
+          "value": 0.31448275862068964,
+          "lower": 0.2896551724137931,
+          "upper": 0.3372413793103448
+        },
+        "recall": {
+          "value": 0.16744669786791472,
+          "lower": 0.1518460738429537,
+          "upper": 0.18460738429537182
+        },
+        "violation_rate": {
+          "value": 0.3275862068965517,
+          "lower": 0.3027586206896552,
+          "upper": 0.3524137931034483
+        },
+        "negative_transfer": {
+          "value": 0.02413793103448276,
+          "lower": 0.016551724137931035,
+          "upper": 0.031724137931034485
+        }
+      },
+      "run_id": "558efe00-0eb5-4313-9e61-a26cf4250aea",
+      "status": "succeeded",
+      "wall_time": 1.0675095239998882
+    }
+  ]
+}

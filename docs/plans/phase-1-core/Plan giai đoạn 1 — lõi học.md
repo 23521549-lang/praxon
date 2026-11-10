@@ -289,7 +289,7 @@ Thứ tự cắt khi cầu dao nhảy, theo lộ trình: plan con 6 thu về bà
 | --- | --- | --- | --- | --- |
 | 12.1 | Khóa cấu hình bằng commit trước khi chạm phần đo | Test tích hợp: `config_hash` khác bản đã khóa thì bộ điều phối từ chối chạy phần đo | xong | khóa thật: 8a34d67e121c2b8005fc680c8fb1f996c31bdda0 |
 | 12.2 | Chạy phần đo BPIC 2015 một lần, bảy điều kiện, năm đô thị | Bốn chỉ số theo tenant kèm khoảng tin cậy; bản ghi `run` đầy đủ | xong | chưa review |
-| 12.3 | Chạy lại để kiểm tái lập | Kết quả trùng lần đầu; thiếu một điều kiện tái lập thì `run` ghi *không tái lập được* | chưa làm | chưa review |
+| 12.3 | Chạy lại để kiểm tái lập | Kết quả trùng lần đầu; thiếu một điều kiện tái lập thì `run` ghi *không tái lập được* | xong | chưa review |
 
 **Review plan con 12** — ngày: · người review: · kết luận:
 
