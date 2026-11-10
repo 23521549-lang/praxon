@@ -4,14 +4,14 @@ Sinh bằng lệnh: `python -m tools.generate_phase1_report` — mọi số tron
 
 ## 1. Ảnh chụp đầu vào
 
-- Commit `feat/integration` lúc sinh: `3c27472576dc328bd9a52491782d00ce4bb26f81`
-- Ngày sinh (UTC+7): 2026-11-07
-- Khóa cấu hình 12.1: CHƯA KHÓA — chờ 12.1 (bước khóa)
-- `config_hash` (khóa đo): CHƯA CÓ — chờ khóa 12.1
+- Commit `feat/integration` lúc sinh: `583274e5fbd5f6f120f5d23c050f460f1e321efc`
+- Ngày sinh (UTC+7): 2026-11-10
+- Khóa cấu hình 12.1: commit `8a34d67e121c2b8005fc680c8fb1f996c31bdda0`
+- `config_hash` (khóa đo): `13e98fec4a6088cf30b63c1efea594460193be605efaf957eb5d548d4a225f20`
 - `data_hash` (BPIC 2015, cả năm đô thị): `0edb706dcf2afb637a0c7b57ee9d284fc8958ee50b9594a05e3365ec5a805b92`
 - Seed: 42 (bộ chuẩn bán tổng hợp + đo F1 6.5 + hiệu chỉnh 9.6)
 - Model: Qwen/Qwen3-8B-GGUF (revision `7c41481f57cb95916b40956ab2f0b139b296d974`) — mặc định Settings, mẫu dùng ở 6.5/9.1
-- Trường Settings (19): bootstrap_draws, checkpoint_every_n_cases, checkpoint_store, cpu_model_base_url, database_url, model_id, model_max_retries, model_retry_base_delay_seconds, model_revision, openai_api_key, openai_base_url, reflector_batch_size, reflector_max_insights_per_batch, s3_access_key_id, s3_bucket, s3_endpoint_url, s3_secret_access_key, token_budget_reserve_per_call, token_budget_total
+- Trường Settings (20): bootstrap_draws, checkpoint_every_n_cases, checkpoint_store, cpu_model_base_url, database_url, model_id, model_max_retries, model_retry_base_delay_seconds, model_revision, model_timeout_seconds, openai_api_key, openai_base_url, reflector_batch_size, reflector_max_insights_per_batch, s3_access_key_id, s3_bucket, s3_endpoint_url, s3_secret_access_key, token_budget_reserve_per_call, token_budget_total
 - Đầu vào đã dùng:
   - `bpic2019.txt` (sha256 `467878a2d3a225b819ff487d67a34addde5af56ebc98458833b0a1140472d3c6`)
   - `calibration-beta.txt` (sha256 `112d6b2dddccb67f388dca731c4cc788297ae4809647e42feb6359610ce84409`)
@@ -26,7 +26,6 @@ Sinh bằng lệnh: `python -m tools.generate_phase1_report` — mọi số tron
   - B2.2 Bốn chỉ số theo tenant x điều kiện kèm CI 95% — chờ 13.1 (lệnh) + 12.2 (lần chạy đo)
   - B2.3 Tái lập: chạy lại lần hai ra đúng kết quả lần đầu hay không — chờ 12.3
   - B2.4 Phép thử đứt phiên: verdict 4 lần chạy — chờ 11.3 (lần chạy Kaggle chờ 11.1 + 11.2)
-  - B2.5 Commit khóa + config_hash của lần chạy đo — chờ 12.1 (bước khóa)
 
 ## 2. Dữ liệu
 
@@ -70,7 +69,7 @@ CHƯA CÓ — chờ chạy lại lệnh đo `python -m tools.measure_f1_text_to_
 
 ## 4. Luật Wabo (9.1)
 
-CHƯA CÓ — chờ 9.1 đo thật (đang chạy trong sandbox Docker)
+CHƯA CÓ — chờ 9.1 đo thật
 
 ## 5. Hiệu chỉnh cổng Beta (9.6)
 

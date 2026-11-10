@@ -43,10 +43,8 @@
       "measured_at": "2026-11-07",
       "measured_at_commit": "3c27472",
       "measured_number": 25,
-      "open_items": [
-        "Thuận quyết số 21/25: cập nhật plan/spec thành 25 hay thu hẹp định nghĩa tấn công"
-      ],
-      "plan_number": 21,
+      "open_items": [],
+      "plan_number": 25,
       "run_id_or_url": null,
       "test_or_number": "25/25 phép tấn công bị chặn (34/34 test trong file)",
       "total_tests": 34,
@@ -58,17 +56,14 @@
       "local": {
         "gates_passed": 11,
         "perf_passed": 1,
-        "pytest_passed": 718
+        "pytest_passed": 1004
       },
-      "measured_at": "2026-11-07",
-      "measured_at_commit": "3c27472",
-      "open_items": [
-        "sửa CI (task riêng, cần đề xuất riêng)",
-        "một lần chạy CI xanh trên HEAD"
-      ],
-      "run_id_or_url": "https://github.com/23521549-lang/praxon/actions/runs/42368407153",
-      "test_or_number": "tại chỗ: 11/11 cổng máy xanh, pytest 718 passed + perf 1 passed; GitHub: ĐỎ (run 42368407153, đúng 1 test test_main_real_m1 thiếu dữ liệu BPIC 2015 trên runner)",
-      "verdict": "CHUA_DU"
+      "measured_at": "2026-11-10",
+      "measured_at_commit": "583274e",
+      "open_items": [],
+      "run_id_or_url": "https://github.com/23521549-lang/praxon/actions/runs/42778699898",
+      "test_or_number": "tại chỗ: 11/11 cổng máy xanh, pytest 1004 passed + perf 1 passed; GitHub: xanh (run 42778699898, success, 11m33s, 10/11; jobs cong-may + clean-machine)",
+      "verdict": "DAT"
     },
     {
       "command": "python -m pytest tests/integration/test_event_log.py tests/test_tool_gateway.py tests/test_human_decision.py",
@@ -86,7 +81,7 @@
       "verdict": "DAT"
     }
   ],
-  "head_commit": "3c27472",
+  "head_commit": "583274e",
   "report_status": "DRAFT",
-  "written_at": "2026-11-07"
+  "written_at": "2026-11-10"
 }

@@ -3,6 +3,7 @@
 - **Trạng thái:** DRAFT — chưa trình cổng. Chỉ đánh FINAL khi cả sáu điều kiện ĐẠT (hoặc ĐẠT kèm mục mở đã được Thuận chấp nhận bằng văn bản).
 - **Commit HEAD lúc viết:** `3c27472` (nhánh `feat/integration`, merge 12.1).
 - **Ngày viết:** 7/11/2026.
+- **Làm mới:** 10/11/2026 (HEAD `583274e`): C4 21→25, C5 bằng chứng run 42778699898.
 - **Người viết:** Huỳnh Ngọc Thuận.
 - **Bằng chứng có cấu trúc:** `bao-cao-cong-1-evidence.json` (cùng thư mục). Mọi con số trong báo cáo này đều có mặt trong file JSON đó; chạy `python -m tools.verify_gate1` để đối chiếu số trong JSON với phép đo chạy lại.
 - **Kết luận cổng qua hay không:** KHÔNG có trong báo cáo này. Kết luận là của Thuận ở review cấp 3.
@@ -14,7 +15,7 @@ Lấy nguyên từ lộ trình, không diễn giải thêm:
 1. Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu.
 2. In bốn chỉ số theo từng tenant kèm khoảng tin cậy và bản ghi lần chạy.
 3. Chạy lại ra đúng kết quả đó.
-4. 21 phép tấn công bị chặn.
+4. 25 phép tấn công bị chặn.
 5. CI xanh ở mọi cổng máy.
 6. Ba nền móng phòng điều khiển có test.
 
@@ -25,8 +26,8 @@ Lấy nguyên từ lộ trình, không diễn giải thêm:
 | C1 | Một lệnh, 7 điều kiện, 2 nguồn | CHƯA ĐỦ | Lệnh 13.1 (chưa có) | — | — |
 | C2 | 4 chỉ số + CI + bản ghi lần chạy | CHƯA ĐỦ | Từ đầu ra lệnh 13.1 (chưa có) | — | — |
 | C3 | Chạy lại ra đúng kết quả | CHƯA ĐỦ | Chạy lệnh 13.1 hai lần (chưa có) | — | — |
-| C4 | 21 phép tấn công bị chặn | ĐẠT (về thực chất) + MỤC MỞ | 25/25 phép tấn công bị chặn (34/34 test) | 3c27472 | 7/11/2026 |
-| C5 | CI xanh ở mọi cổng máy | CHƯA ĐỦ | Tại chỗ 11/11 xanh; GitHub ĐỎ (run 42368407153) | 3c27472 | 7/11/2026 |
+| C4 | 25 phép tấn công bị chặn | ĐẠT | 25/25 phép tấn công bị chặn (34/34 test) | 3c27472 | 7/11/2026 |
+| C5 | CI xanh ở mọi cổng máy | ĐẠT | Tại chỗ 11/11 xanh; GitHub xanh (run 42778699898, success, 11m33s, 10/11; jobs cong-may + clean-machine) | 583274e | 10/11/2026 |
 | C6 | Ba nền móng phòng điều khiển có test | ĐẠT | 23 test qua (7 + 9 + 7) | 3c27472 | 7/11/2026 |
 
 ## C1 — Một lệnh chạy bảy điều kiện trên cả hai nguồn dữ liệu
@@ -70,26 +71,26 @@ Bằng chứng từng phần đã có:
 
 Còn thiếu: task 13.1 (chạy hai lần) + task 12.3 (kiểm tái lập phía phần đo).
 
-## C4 — 21 phép tấn công bị chặn
+## C4 — 25 phép tấn công bị chặn
 
-**Verdict: ĐẠT (về thực chất) + MỤC MỞ.**
+**Verdict: ĐẠT.**
 
 Phép thử: `python -m pytest tests/integration/test_invariants.py` — xanh: **25/25 phép tấn công bị chặn** (34/34 test trong file, gồm 25 tấn công + 1 control dương phải QUA + 8 kiểm tra cấu trúc/control). Commit đo `3c27472`, ngày 7/11/2026.
 
-**Mục mở — lệch số 21/25:** plan (dòng 19, 30, 81, task 2.5 dòng 92) và spec (dòng 43, 204) ghi "21 phép tấn công", nhưng file test hiện có 25 phép tấn công (docstring đầu file ghi "25 phép tấn công trên 6 bất biến dữ liệu"). Báo cáo này ghi cả hai số, không lặng lẽ viết "21/21" hay "25/25". Cần Thuận quyết: cập nhật plan/spec thành 25, hay thu hẹp định nghĩa tấn công. Đây là quyết định, không phải code.
+**Đã giải quyết — lệch số 21/25:** commit `8429321` (7/11 12:26 UTC) đã cập nhật plan (dòng 19, 30, 81, task 2.5 dòng 92) và spec (dòng 204) thành 25 phép tấn công; câu "21/21" còn lại ở spec dòng 43 là bản ghi lịch sử ngày 3/10/2026 (lúc đó bộ test có 21 phép), không phải yêu cầu hiện tại. Không còn mục mở cho C4.
 
 ## C5 — CI xanh ở mọi cổng máy
 
-**Verdict: CHƯA ĐỦ.**
+**Verdict: ĐẠT.**
 
 Hai số:
 
 - (a) Tại chỗ: 11/11 cổng máy xanh, pytest chính 718 passed + perf 1 passed (commit đo `3c27472`, ngày 7/11/2026).
-- (b) GitHub: ĐỎ. 5 lần chạy gần nhất trên `feat/integration` đều `failure`. 2 lần gần nhất (run 42368407153 "Merge plan status 10.4", 11:29 UTC 7/11/2026; run 42367835583 "Merge 10.4 token budget", 11:21 UTC) đỏ vì đúng 1 test: `test_main_real_m1` (`tests/test_difference.py:159`) do thiếu tệp `/home/runner/.cache/praxon/bpic2015/BPIC15_1.xes` trên runner — thiếu dữ liệu bên thứ ba, không phải lỗi code.
+- (b) GitHub: xanh. Lần chạy gần nhất trên `feat/integration` là run 42778699898 (success, 11m33s, 10/11/2026; jobs cong-may + clean-machine đều success; HEAD `583274e`). Hai lần chạy đỏ cũ (run 42368407153 và 42367835583, đỏ vì 1 test `test_main_real_m1` thiếu tệp BPIC 2015 trên runner) đã được sửa bằng các commit lấy dữ liệu BPIC trong CI (`6fb8a1f`, `264f7eb`, `e44e020`).
 
-Còn thiếu: sửa CI (task riêng, cần đề xuất riêng — các phương án: CI tải dữ liệu BPIC 2015 trong workflow; cache dữ liệu giữa các lần chạy; test bỏ qua khi thiếu dữ liệu — chưa chọn phương án nào) + một lần chạy CI xanh trên HEAD.
+Không còn thiếu cho C5.
 
-Lưu ý: đánh giá "1 chưa kiểm (trạng thái GitHub CI)" trong biên bản cầu dao §6 nay đã cũ — CI đã kiểm và đang ĐỎ, không còn "chưa kiểm".
+Lưu ý: đánh giá "1 chưa kiểm (trạng thái GitHub CI)" trong biên bản cầu dao §6 nay đã cũ — CI đã kiểm và đã xanh (run 42778699898, success, 11m33s, 10/11), không còn "chưa kiểm".
 
 ## C6 — Ba nền móng phòng điều khiển có test
 
@@ -105,17 +106,14 @@ Không còn gì — chỉ cần chạy lại để ghi số vào báo cáo FINAL
 
 ## Còn thiếu để đóng cổng (theo thứ tự)
 
-1. **Sửa CI (C5)** — task riêng, đề xuất riêng (chọn 1 trong 3 phương án ở mục C5); xong thì một lần chạy CI xanh trên HEAD. Không chờ 13.1.
-2. **Thuận quyết số 21/25 (C4)** — một quyết định, không phải code; ghi vào báo cáo (và, nếu Thuận đồng ý đổi số, sửa plan/spec bằng đề xuất riêng).
-3. **11.1–11.4 rồi 12.1–12.3** — chuỗi đã chạy (11.1 smoke test qua trình duyệt, 12.1/11.3 đang triển khai phần code); xong thì có dữ liệu đo + khóa cấu hình cho 13.1.
-4. **13.1** — viết lệnh gộp hai nguồn; chạy lệnh đó (C1/C2) và chạy hai lần (C3).
-5. **13.2** — báo cáo kết quả; 13.3 trích số của 13.2 (không tính lại).
-6. **13.3 bước FINAL** — điền số thật vào JSON + Markdown, chạy `verify_gate1.py` (thoát 0), đánh FINAL, trình ở cổng giai đoạn để Thuận kết luận.
-7. **13.4** (spec giai đoạn 2a) không nằm trong chuỗi đóng cổng 1 — làm song song, tuần nghỉ 30/11–6/12, không chặn FINAL.
+1. **11.1–11.4 rồi 12.1–12.3** — chuỗi đã chạy (11.1 smoke test qua trình duyệt, 12.1/11.3 đang triển khai phần code); xong thì có dữ liệu đo + khóa cấu hình cho 13.1.
+2. **13.1** — viết lệnh gộp hai nguồn; chạy lệnh đó (C1/C2) và chạy hai lần (C3).
+3. **13.2** — báo cáo kết quả; 13.3 trích số của 13.2 (không tính lại).
+4. **13.3 bước FINAL** — điền số thật vào JSON + Markdown, chạy `verify_gate1.py` (thoát 0), đánh FINAL, trình ở cổng giai đoạn để Thuận kết luận.
+5. **13.4** (spec giai đoạn 2a) không nằm trong chuỗi đóng cổng 1 — làm song song, tuần nghỉ 30/11–6/12, không chặn FINAL.
 
 ## Mục mở cần Thuận quyết
 
-- **Số 21/25 (C4):** plan/spec ghi 21, file test có 25 — cập nhật số thành 25 hay thu hẹp định nghĩa tấn công?
 - Không có mục mở nào khác lúc viết DRAFT này.
 
 ## Phụ lục
@@ -129,19 +127,9 @@ Không còn gì — chỉ cần chạy lại để ghi số vào báo cáo FINAL
 
 ### Log CI liên quan (E6)
 
-Lần chạy gần nhất `42368407153` ("Merge plan status 10.4 into integration", 11:29 UTC 7/11/2026), job "Test và độ phủ":
+Lần chạy gần nhất `42778699898` (10/11/2026, HEAD `583274e`): success, 11m33s, jobs cong-may + clean-machine đều success.
 
-```
-_________________________ test_main_real_m1 _________________________
-    def test_main_real_m1(capsys):
->       assert main(["--dataset", "m1", "--support", "0.5", "--confidence", "0.5"]) == 0
-E       AssertionError: assert 1 == 0
-tests/test_difference.py:159: AssertionError
------------------------------ Captured stderr call -----------------------------
-thiếu tệp: /home/runner/.cache/praxon/bpic2015/BPIC15_1.xes
-```
-
-Lần trước đó `42367835583` ("Merge 10.4 token budget into integration", 11:21 UTC): cùng test, cùng lỗi, cùng tệp thiếu (`FAILED tests/test_difference.py::test_main_real_m1`). Cả hai lần chỉ có đúng 1 test đỏ trong toàn bộ suite.
+Run đỏ cũ `42368407153` (và `42367835583` trước đó) đã được sửa xong bằng các commit lấy dữ liệu BPIC trong CI (`6fb8a1f`, `264f7eb`, `e44e020`); log lỗi cũ (`test_main_real_m1` thiếu tệp `/home/runner/.cache/praxon/bpic2015/BPIC15_1.xes` trên runner) không còn xảy ra.
 
 ### Đo thật 9.1
 

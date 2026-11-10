@@ -64,10 +64,10 @@ def _mau_evidence(pytest_passed: int = 706) -> dict[str, Any]:
                 "measured_at_commit": "3c27472",
                 "measured_at": "2026-11-07",
                 "run_id_or_url": None,
-                "plan_number": 21,
+                "plan_number": 25,
                 "measured_number": 25,
                 "total_tests": 34,
-                "open_items": ["Thuận quyết số 21/25"],
+                "open_items": [],
             },
             {
                 "id": "C5",
@@ -198,7 +198,7 @@ def test_json_c4_thieu_mot_trong_hai_so_thi_fail(tmp_path):
     del evidence["conditions"][3]["plan_number"]
     errors = check_structure(evidence)
     assert errors
-    assert any("C4" in e and "21" in e for e in errors)
+    assert any("C4" in e and "25" in e for e in errors)
 
 
 def test_verdict_la_thi_fail(tmp_path):
